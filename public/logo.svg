@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="50%" stop-color="#022C22" />
+      <stop offset="100%" stop-color="#064E3B" />
+    </linearGradient>
+    <linearGradient id="neonGreen" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#22C55E" />
+      <stop offset="50%" stop-color="#1DB954" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <linearGradient id="geminiCyan" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#818CF8" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Rounded Squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" stroke="#1DB954" stroke-width="8" stroke-opacity="0.3" />
+
+  <!-- Camera Lens Outer Ring -->
+  <circle cx="256" cy="256" r="170" stroke="url(#neonGreen)" stroke-width="12" stroke-linecap="round" stroke-dasharray="24 16" filter="url(#glow)" opacity="0.8" />
+  
+  <!-- Camera Shutter Aperture / Vinyl Disc -->
+  <circle cx="256" cy="256" r="130" fill="#090D16" stroke="#1E293B" stroke-width="8" />
+  <circle cx="256" cy="256" r="95" stroke="#334155" stroke-width="3" stroke-dasharray="8 8" />
+
+  <!-- Music Soundwaves / Spotify Arc Waves -->
+  <path d="M190 220 C230 200 282 200 322 220" stroke="url(#neonGreen)" stroke-width="14" stroke-linecap="round" filter="url(#glow)" />
+  <path d="M205 256 C235 240 277 240 307 256" stroke="url(#neonGreen)" stroke-width="12" stroke-linecap="round" />
+  <path d="M220 292 C240 280 272 280 292 292" stroke="url(#neonGreen)" stroke-width="10" stroke-linecap="round" />
+
+  <!-- Camera Corner Guides / Snapshot Viewfinder Marks -->
+  <path d="M130 170 V140 H160" stroke="url(#geminiCyan)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M382 170 V140 H352" stroke="url(#geminiCyan)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M130 342 V372 H160" stroke="url(#geminiCyan)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M382 342 V372 H352" stroke="url(#geminiCyan)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
+
+  <!-- Gemini Sparkle Star -->
+  <path d="M370 120 Q370 145 395 145 Q370 145 370 170 Q370 145 345 145 Q370 145 370 120 Z" fill="url(#geminiCyan)" filter="url(#glow)" />
+</svg>

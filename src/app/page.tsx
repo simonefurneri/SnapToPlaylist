@@ -1,69 +1,539 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import React, { useState, useEffect, useCallback, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import {
+  ExtractedSong,
+  GeminiExtractionResponse,
+  SpotifyUserProfile,
+  CreatedPlaylistResult,
+} from "@/types";
+import {
+  getStoredAccessToken,
+  fetchCurrentUserProfile,
+  logoutSpotify,
+  initiateSpotifyAuth,
+  searchSpotifyTrack,
+  createPlaylistAndAddTracks,
+  getAndClearPendingPlaylistAction,
+  getSpotifyClientId,
+} from "@/lib/spotify";
+import { Navbar } from "@/components/Navbar";
+import { ImageUploader } from "@/components/ImageUploader";
+import { SongList } from "@/components/SongList";
+import { CreatePlaylistConfirmModal } from "@/components/CreatePlaylistConfirmModal";
+import { PlaylistCreatedModal } from "@/components/PlaylistCreatedModal";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Sparkles,
+  Music,
+  ShieldCheck,
+  Zap,
+} from "lucide-react";
+
+function MainAppContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // App State
+  const [songs, setSongs] = useState<ExtractedSong[]>([]);
+  const [playlistName, setPlaylistName] = useState<string>("");
+  const [userProfile, setUserProfile] = useState<SpotifyUserProfile | null>(null);
+
+  // Status & Progress
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [activeCheckingSongId, setActiveCheckingSongId] = useState<string | null>(
+    null
+  );
+  const [statusStepText, setStatusStepText] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Modals
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [createdPlaylistResult, setCreatedPlaylistResult] =
+    useState<CreatedPlaylistResult | null>(null);
+
+  // 1. Check existing Spotify session
+  const loadProfile = useCallback(async () => {
+    const token = getStoredAccessToken();
+    if (token) {
+      try {
+        const profile = await fetchCurrentUserProfile(token);
+        setUserProfile(profile);
+      } catch (err: unknown) {
+        console.warn("Errore sessione Spotify:", err);
+        setUserProfile(null);
+      }
+    } else {
+      setUserProfile(null);
+    }
+  }, []);
+
+  // 2. Handle OAuth return
+  useEffect(() => {
+    loadProfile();
+
+    const queryError = searchParams.get("error");
+    const queryAuthSuccess = searchParams.get("spotify_auth");
+
+    if (queryError) {
+      setErrorMessage(decodeURIComponent(queryError));
+    }
+
+    if (queryAuthSuccess) {
+      setSuccessMessage("Login Spotify effettuato con successo!");
+      setTimeout(() => setSuccessMessage(null), 4000);
+
+      // Restore pending action if any
+      const pending = getAndClearPendingPlaylistAction();
+      if (pending && pending.songs && pending.songs.length > 0) {
+        setPlaylistName(pending.playlistName || "La mia Playlist Snap");
+        setSongs(pending.songs);
+
+        if (pending.autoCreateAfterAuth) {
+          setIsConfirmModalOpen(true);
+        }
+      }
+      router.replace("/");
+    }
+  }, [searchParams, router, loadProfile]);
+
+  // 3. Gemini Vision Extraction
+  const handleAnalyzeImage = async (
+    fileOrBase64: File | string,
+    mimeType: string = "image/jpeg"
+  ) => {
+    setIsExtracting(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      let response: Response;
+
+      if (typeof fileOrBase64 === "string") {
+        response = await fetch("/api/extract-songs", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            image: fileOrBase64,
+            mimeType: mimeType,
+          }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.append("image", fileOrBase64);
+
+        response = await fetch("/api/extract-songs", {
+          method: "POST",
+          body: formData,
+        });
+      }
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Errore durante l'analisi dell'immagine.");
+      }
+
+      const extractionData = data as GeminiExtractionResponse;
+
+      if (!extractionData.songs || extractionData.songs.length === 0) {
+        throw new Error(
+          "Nessun brano musicale riconosciuto. Assicurati che lo screenshot contenga titoli di canzoni leggibili."
+        );
+      }
+
+      const formattedSongs: ExtractedSong[] = extractionData.songs.map(
+        (song, index) => ({
+          id: `song-${Date.now()}-${index}`,
+          title: song.title,
+          artist: song.artist,
+          album: song.album,
+          status: "pending",
+        })
+      );
+
+      setPlaylistName(
+        extractionData.suggestedPlaylistName || "La mia Playlist Snap"
+      );
+      setSongs(formattedSongs);
+      setSuccessMessage(
+        `Estratte con successo ${formattedSongs.length} canzoni da Gemini!`
+      );
+      setTimeout(() => setSuccessMessage(null), 3500);
+    } catch (err: unknown) {
+      const error = err as Error;
+      setErrorMessage(
+        error.message || "Si è verificato un errore durante l'analisi dell'immagine."
+      );
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  // 4. Update, Delete, Add song (resets status to 'pending' to require re-verification)
+  const handleUpdateSong = (id: string, updated: Partial<ExtractedSong>) => {
+    setSongs((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              ...updated,
+              status: "pending",
+              spotifyUri: undefined,
+              spotifyTrackName: undefined,
+              spotifyArtistName: undefined,
+              spotifyAlbumCover: undefined,
+              spotifyTrackUrl: undefined,
+              spotifyPreviewUrl: undefined,
+            }
+          : s
+      )
+    );
+  };
+
+  const handleDeleteSong = (id: string) => {
+    setSongs((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const handleAddSong = () => {
+    const newSong: ExtractedSong = {
+      id: `song-${Date.now()}-${songs.length}`,
+      title: "Nuovo Titolo",
+      artist: "Artista",
+      status: "pending",
+    };
+    setSongs((prev) => [...prev, newSong]);
+  };
+
+  // 5. Step 1: Verify Spotify Matches Only
+  const handleVerifySpotifyTracks = async () => {
+    if (songs.length === 0) return;
+
+    const token = getStoredAccessToken();
+
+    // If not authenticated, trigger login first
+    if (!token) {
+      const clientId = getSpotifyClientId();
+      if (!clientId) {
+        setErrorMessage(
+          "NEXT_PUBLIC_SPOTIFY_CLIENT_ID non configurato nelle variabili d'ambiente."
+        );
+        return;
+      }
+      await initiateSpotifyAuth({
+        playlistName,
+        songs,
+        autoCreateAfterAuth: false,
+      });
+      return;
+    }
+
+    setIsVerifying(true);
+    setErrorMessage(null);
+
+    const updatedSongs: ExtractedSong[] = [...songs];
+
+    try {
+      for (let i = 0; i < updatedSongs.length; i++) {
+        const song = updatedSongs[i];
+        setActiveCheckingSongId(song.id);
+        setStatusStepText(`Verifica (${i + 1}/${updatedSongs.length}): "${song.title}"...`);
+
+        updatedSongs[i] = { ...song, status: "searching" };
+        setSongs([...updatedSongs]);
+
+        try {
+          const match = await searchSpotifyTrack(token, song.title, song.artist);
+          if (match.found && match.spotifyUri) {
+            updatedSongs[i] = {
+              ...song,
+              status: "found",
+              spotifyUri: match.spotifyUri,
+              spotifyTrackName: match.spotifyTrackName,
+              spotifyArtistName: match.spotifyArtistName,
+              spotifyAlbumCover: match.spotifyAlbumCover,
+              spotifyTrackUrl: match.spotifyTrackUrl,
+              spotifyPreviewUrl: match.spotifyPreviewUrl,
+            };
+          } else {
+            updatedSongs[i] = {
+              ...song,
+              status: "not_found",
+              spotifyUri: undefined,
+              spotifyAlbumCover: undefined,
+            };
+          }
+        } catch {
+          updatedSongs[i] = {
+            ...song,
+            status: "not_found",
+            spotifyUri: undefined,
+            spotifyAlbumCover: undefined,
+          };
+        }
+
+        setSongs([...updatedSongs]);
+      }
+
+      const foundCount = updatedSongs.filter((s) => s.status === "found").length;
+      setStatusStepText(
+        `Verifica completata: ${foundCount} brani trovati su ${updatedSongs.length}.`
+      );
+    } catch (err: unknown) {
+      const error = err as Error;
+      setErrorMessage(error.message || "Errore durante la verifica dei brani.");
+    } finally {
+      setIsVerifying(false);
+      setActiveCheckingSongId(null);
+    }
+  };
+
+  // 6. Step 2: Open Confirmation Modal
+  const handleRequestCreatePlaylist = () => {
+    const hasUnchecked = songs.some((s) => s.status === "pending" || !s.status);
+    if (hasUnchecked) {
+      setErrorMessage(
+        "Verifica prima i brani su Spotify per controllare quali sono disponibili."
+      );
+      return;
+    }
+
+    const foundCount = songs.filter((s) => s.status === "found").length;
+    if (foundCount === 0) {
+      setErrorMessage("Nessun brano trovato su Spotify da inserire nella playlist.");
+      return;
+    }
+
+    setIsConfirmModalOpen(true);
+  };
+
+  // 7. Step 3: Execute Playlist Creation on Spotify
+  const handleExecuteCreateSpotifyPlaylist = async () => {
+    let token = getStoredAccessToken();
+
+    if (!token) {
+      await initiateSpotifyAuth({
+        playlistName,
+        songs,
+        autoCreateAfterAuth: true,
+      });
+      return;
+    }
+
+    setIsCreating(true);
+    setErrorMessage(null);
+    setStatusStepText("Creazione della playlist in corso...");
+
+    try {
+      const result = await createPlaylistAndAddTracks(
+        token,
+        playlistName,
+        songs,
+        `Creata da screenshot tramite SnapToPlaylist (Gemini Vision AI)`
+      );
+
+      setIsConfirmModalOpen(false);
+      setCreatedPlaylistResult(result);
+    } catch (err: unknown) {
+      const error = err as Error;
+      if (error.message.includes("401") || error.message.includes("scaduta")) {
+        logoutSpotify();
+        setUserProfile(null);
+        setErrorMessage("Sessione Spotify scaduta. Effettua nuovamente il login.");
+      } else {
+        setErrorMessage(error.message || "Errore nella creazione della playlist.");
+      }
+    } finally {
+      setIsCreating(false);
+      setStatusStepText("");
+    }
+  };
+
+  const handleLogout = () => {
+    logoutSpotify();
+    setUserProfile(null);
+    setSuccessMessage("Disconnesso da Spotify.");
+    setTimeout(() => setSuccessMessage(null), 3000);
+  };
+
+  // Reset to initial screen
+  const handleResetToHome = () => {
+    setSongs([]);
+    setPlaylistName("");
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setActiveCheckingSongId(null);
+    setStatusStepText("");
+    setIsConfirmModalOpen(false);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-[#1DB954]/30 selection:text-white">
+      {/* Navigation with clickable logo to reset */}
+      <Navbar
+        userProfile={userProfile}
+        onLogout={handleLogout}
+        onLoginSpotify={() => initiateSpotifyAuth()}
+        onResetToHome={handleResetToHome}
+      />
+
+      {/* Main Content */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-6 sm:py-10 space-y-6">
+        {/* Alerts */}
+        {errorMessage && (
+          <div className="bg-rose-950/70 border border-rose-800/80 rounded-2xl p-4 flex items-start gap-3 text-rose-200 shadow-xl animate-in fade-in duration-300">
+            <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+            <p className="flex-1 text-xs sm:text-sm font-medium">{errorMessage}</p>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-xs text-rose-400 hover:text-white p-1 cursor-pointer"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              ✕
+            </button>
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="bg-emerald-950/70 border border-emerald-800/80 rounded-2xl p-4 flex items-center gap-3 text-emerald-200 shadow-xl animate-in fade-in duration-300">
+            <CheckCircle2 className="w-5 h-5 text-[#1DB954] flex-shrink-0" />
+            <p className="flex-1 text-xs sm:text-sm font-medium">{successMessage}</p>
+            <button
+              type="button"
+              onClick={() => setSuccessMessage(null)}
+              className="text-xs text-emerald-400 hover:text-white p-1 cursor-pointer"
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* View 1: Upload Hero View */}
+        {songs.length === 0 ? (
+          <div className="space-y-8 sm:space-y-12">
+            {/* Hero */}
+            <div className="text-center max-w-2xl mx-auto space-y-3 pt-2 sm:pt-4 px-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900/90 border border-neutral-800 text-[11px] font-semibold text-neutral-300 shadow-lg">
+                <Sparkles className="w-3.5 h-3.5 text-[#1DB954]" />
+                <span>Gemini Vision AI + Spotify API</span>
+              </div>
+
+              <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-tight">
+                Da Screenshot a{" "}
+                <span className="bg-gradient-to-r from-[#1DB954] via-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                  Playlist Spotify
+                </span>
+              </h1>
+
+              <p className="text-xs sm:text-sm text-neutral-400 max-w-lg mx-auto leading-relaxed">
+                Carica uno screenshot con brani musicali. Gemini riconosce i titoli, potrai verificarli singolarmente su Spotify e creare la playlist con un click.
+              </p>
+            </div>
+
+            {/* Uploader */}
+            <ImageUploader
+              onAnalyzeImage={handleAnalyzeImage}
+              isLoading={isExtracting}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+            {/* Feature Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-4 border-t border-neutral-850">
+              <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 space-y-1.5">
+                <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                  <Zap className="w-4 h-4" />
+                </div>
+                <h3 className="font-bold text-xs sm:text-sm text-white">OCR Gemini Vision</h3>
+                <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
+                  Riconosce testo e brani da immagini a qualsiasi risoluzione e genera il nome della playlist.
+                </p>
+              </div>
+
+              <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 space-y-1.5">
+                <div className="w-8 h-8 rounded-xl bg-[#1DB954]/10 border border-[#1DB954]/20 flex items-center justify-center text-[#1DB954]">
+                  <Music className="w-4 h-4" />
+                </div>
+                <h3 className="font-bold text-xs sm:text-sm text-white">Verifica Accurata</h3>
+                <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
+                  Verifica in tempo reale su Spotify senza falsi positivi per brani o artisti inesistenti.
+                </p>
+              </div>
+
+              <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 space-y-1.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <h3 className="font-bold text-xs sm:text-sm text-white">OAuth PKCE Sicuro</h3>
+                <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
+                  Autenticazione diretta e sicura con Spotify senza trasmissione di credenziali sensibili.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* View 2: Song List & Separated Check / Create Flow */
+          <SongList
+            songs={songs}
+            playlistName={playlistName}
+            onPlaylistNameChange={setPlaylistName}
+            onUpdateSong={handleUpdateSong}
+            onDeleteSong={handleDeleteSong}
+            onAddSong={handleAddSong}
+            onVerifyTracks={handleVerifySpotifyTracks}
+            onRequestCreatePlaylist={handleRequestCreatePlaylist}
+            isVerifying={isVerifying}
+            isCreating={isCreating}
+            activeCheckingSongId={activeCheckingSongId}
+            statusStepText={statusStepText}
+            onReset={handleResetToHome}
+          />
+        )}
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-neutral-850 bg-neutral-950 py-5 text-center text-[11px] text-neutral-500">
+        <p>
+          SnapToPlaylist • Powered by{" "}
+          <span className="text-indigo-400 font-semibold">Gemini Vision AI</span> &amp;{" "}
+          <span className="text-[#1DB954] font-semibold">Spotify Web API</span>
+        </p>
+      </footer>
+
+      {/* Confirmation Modal */}
+      <CreatePlaylistConfirmModal
+        isOpen={isConfirmModalOpen}
+        playlistName={playlistName}
+        songs={songs}
+        isCreating={isCreating}
+        onConfirm={handleExecuteCreateSpotifyPlaylist}
+        onClose={() => setIsConfirmModalOpen(false)}
+      />
+
+      {/* Success Modal */}
+      <PlaylistCreatedModal
+        result={createdPlaylistResult}
+        onClose={() => setCreatedPlaylistResult(null)}
+      />
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-neutral-950 text-white flex items-center justify-center">
+          <div className="animate-spin w-8 h-8 border-4 border-[#1DB954] border-t-transparent rounded-full" />
+        </div>
+      }
+    >
+      <MainAppContent />
+    </Suspense>
   );
 }
