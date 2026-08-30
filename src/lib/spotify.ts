@@ -50,18 +50,17 @@ export function setCustomSpotifyClientId(clientId: string) {
   }
 }
 
-// Generate redirect URI dynamically based on current origin if not preset
+// Generate redirect URI dynamically based on current origin
 export function getSpotifyRedirectUri(): string {
-  if (process.env.NEXT_PUBLIC_SPOTIFY_REDIRECT_URI) {
-    return process.env.NEXT_PUBLIC_SPOTIFY_REDIRECT_URI;
-  }
   if (typeof window !== "undefined") {
+    // Spotify rejects 'localhost', so map localhost to 127.0.0.1 loopback IP
     if (window.location.hostname === "localhost") {
       return `http://127.0.0.1:${window.location.port || "3000"}/callback`;
     }
+    // On any production domain (e.g. tuodominio.it or tuoprogetto.vercel.app), use current origin
     return `${window.location.origin}/callback`;
   }
-  return "http://127.0.0.1:3000/callback";
+  return process.env.NEXT_PUBLIC_SPOTIFY_REDIRECT_URI || "http://127.0.0.1:3000/callback";
 }
 
 // Helper: Generate random string for PKCE code verifier
