@@ -16,44 +16,115 @@ interface ImageUploaderProps {
   isLoading: boolean;
 }
 
+// Client-side image optimizer for iPhone / high-res photos
+async function optimizeImageForUpload(file: File): Promise<{
+  dataUrl: string;
+  sizeKB: number;
+}> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = (event) => {
+      const img = new Image();
+
+      img.onload = () => {
+        const MAX_DIMENSION = 1600; // Optimal for OCR & Gemini Vision
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIMENSION) / width);
+            width = MAX_DIMENSION;
+          } else {
+            width = Math.round((width * MAX_DIMENSION) / height);
+            height = MAX_DIMENSION;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        if (!ctx) {
+          resolve({
+            dataUrl: event.target?.result as string,
+            sizeKB: Math.round(file.size / 1024),
+          });
+          return;
+        }
+
+        // Draw image onto canvas
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Convert to high-quality JPEG (drastically reduces 10MB iPhone photos to ~300KB)
+        const optimizedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        const approxSizeKB = Math.round((optimizedDataUrl.length * 3) / 4 / 1024);
+
+        resolve({
+          dataUrl: optimizedDataUrl,
+          sizeKB: approxSizeKB,
+        });
+      };
+
+      img.onerror = () => {
+        // Fallback to original raw base64 if canvas decoding fails
+        resolve({
+          dataUrl: event.target?.result as string,
+          sizeKB: Math.round(file.size / 1024),
+        });
+      };
+
+      img.src = event.target?.result as string;
+    };
+
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
 export function ImageUploader({
   onAnalyzeImage,
   isLoading,
 }: ImageUploaderProps) {
   const [dragActive, setDragActive] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [base64Data, setBase64Data] = useState<string | null>(null);
+  const [optimizedBase64, setOptimizedBase64] = useState<string | null>(null);
   const [fileDetails, setFileDetails] = useState<{ name: string; size: string } | null>(
     null
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const processFile = useCallback((file: File) => {
-    if (!file.type.startsWith("image/")) {
-      alert("Per favore seleziona un file immagine valido (PNG, JPG, WebP, ecc.)");
+  const processFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/") && !file.name.match(/\.(png|jpe?g|webp|heic|heif)$/i)) {
+      alert("Per favore seleziona un file immagine valido (PNG, JPG, WebP, HEIC).");
       return;
     }
 
-    setSelectedFile(file);
-    setFileDetails({
-      name: file.name,
-      size: `${(file.size / 1024).toFixed(1)} KB`,
-    });
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      setPreviewUrl(result);
-      setBase64Data(result);
-    };
-    reader.readAsDataURL(file);
+    setIsOptimizing(true);
+    try {
+      const { dataUrl, sizeKB } = await optimizeImageForUpload(file);
+      setPreviewUrl(dataUrl);
+      setOptimizedBase64(dataUrl);
+      setFileDetails({
+        name: file.name,
+        size: sizeKB > 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`,
+      });
+    } catch (err) {
+      console.error("Errore durante l'ottimizzazione dell'immagine:", err);
+    } finally {
+      setIsOptimizing(false);
+    }
   }, []);
 
   // Listen to clipboard paste events globally (Ctrl+V)
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
-      if (isLoading) return;
+      if (isLoading || isOptimizing) return;
       const items = e.clipboardData?.items;
       if (!items) return;
 
@@ -70,7 +141,7 @@ export function ImageUploader({
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [isLoading, processFile]);
+  }, [isLoading, isOptimizing, processFile]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -100,8 +171,7 @@ export function ImageUploader({
 
   const handleClear = () => {
     setPreviewUrl(null);
-    setSelectedFile(null);
-    setBase64Data(null);
+    setOptimizedBase64(null);
     setFileDetails(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -109,10 +179,8 @@ export function ImageUploader({
   };
 
   const handleAnalyze = async () => {
-    if (selectedFile) {
-      await onAnalyzeImage(selectedFile);
-    } else if (base64Data) {
-      await onAnalyzeImage(base64Data, "image/png");
+    if (optimizedBase64) {
+      await onAnalyzeImage(optimizedBase64, "image/jpeg");
     }
   };
 
@@ -121,7 +189,7 @@ export function ImageUploader({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         onChange={handleChange}
         className="hidden"
       />
@@ -156,25 +224,31 @@ export function ImageUploader({
                 transition={{ type: "spring", stiffness: 300, damping: 15 }}
                 className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 group-hover:text-white shadow-lg"
               >
-                <UploadCloud className="w-8 h-8 sm:w-10 sm:h-10 text-[#1DB954]" />
+                {isOptimizing ? (
+                  <Loader2 className="w-8 h-8 sm:w-10 sm:h-10 text-[#1DB954] animate-spin" />
+                ) : (
+                  <UploadCloud className="w-8 h-8 sm:w-10 sm:h-10 text-[#1DB954]" />
+                )}
               </motion.div>
 
               <div className="space-y-1.5 px-2">
                 <h3 className="text-base sm:text-xl font-bold text-white tracking-tight">
-                  Carica o trascina qui il tuo screenshot
+                  {isOptimizing
+                    ? "Elaborazione foto in corso..."
+                    : "Carica o scatta il tuo screenshot"}
                 </h3>
                 <p className="text-xs sm:text-sm text-neutral-400 max-w-md mx-auto leading-relaxed">
-                  Tocca per selezionare una foto dalla galleria oppure premi{" "}
+                  Tocca per scegliere dalla galleria dell&apos;iPhone o del computer, oppure premi{" "}
                   <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 font-mono text-[10px] sm:text-[11px] text-neutral-200">
                     Ctrl + V
                   </kbd>{" "}
-                  per incollare direttamente.
+                  per incollare.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-[11px] text-neutral-400">
                 <span className="flex items-center gap-1 bg-neutral-900/80 px-2.5 py-1 rounded-full border border-neutral-800">
-                  <ImageIcon className="w-3 h-3 text-[#1DB954]" /> PNG, JPG, WebP, HEIC
+                  <ImageIcon className="w-3 h-3 text-[#1DB954]" /> PNG, JPG, WebP, HEIC (iPhone)
                 </span>
                 <span className="flex items-center gap-1 bg-neutral-900/80 px-2.5 py-1 rounded-full border border-neutral-800">
                   <ClipboardPaste className="w-3 h-3 text-cyan-400" /> Incolla da appunti
@@ -229,7 +303,7 @@ export function ImageUploader({
                 <div>
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold text-[#1DB954] uppercase tracking-wider">
-                      Screenshot Selezionato
+                      Screenshot Pronto
                     </span>
                     {fileDetails && (
                       <span className="text-xs text-neutral-500 font-mono">
@@ -241,7 +315,7 @@ export function ImageUploader({
                     {fileDetails?.name || "Screenshot musicale"}
                   </h4>
                   <p className="text-xs text-neutral-400 mt-1">
-                    Gemini AI analizzerà lo screenshot per estrarre tutti i brani e proporre un titolo per la playlist.
+                    Ottimizzato per Gemini Vision. Verranno estratti tutti i titoli e artisti visibili.
                   </p>
                 </div>
 
@@ -251,7 +325,7 @@ export function ImageUploader({
                     whileTap={{ scale: 0.98 }}
                     transition={{ type: "spring", stiffness: 400, damping: 20 }}
                     type="button"
-                    disabled={isLoading}
+                    disabled={isLoading || isOptimizing}
                     onClick={handleAnalyze}
                     className="flex-1 py-3 px-5 rounded-2xl bg-gradient-to-r from-[#1DB954] via-emerald-500 to-cyan-500 hover:from-[#1ed760] hover:to-cyan-400 text-neutral-950 font-bold text-sm shadow-lg shadow-[#1DB954]/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
@@ -272,7 +346,7 @@ export function ImageUploader({
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     type="button"
-                    disabled={isLoading}
+                    disabled={isLoading || isOptimizing}
                     onClick={handleClear}
                     className="py-3 px-4 rounded-2xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-400 hover:text-rose-400 border border-neutral-700/50 transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-xs font-semibold"
                     title="Cancella"

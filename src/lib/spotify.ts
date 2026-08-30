@@ -152,6 +152,40 @@ export function logoutSpotify() {
   }
 }
 
+// Safe Base64 helpers for UTF-8 and iOS Safari compatibility
+function safeBase64Encode(str: string): string {
+  try {
+    const bytes = new TextEncoder().encode(str);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+  } catch {
+    return "";
+  }
+}
+
+function safeBase64Decode(str: string): string {
+  try {
+    let base64 = str.replace(/-/g, "+").replace(/_/g, "/");
+    while (base64.length % 4) {
+      base64 += "=";
+    }
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
 // Start Spotify OAuth Authorization Code Flow with PKCE
 export async function initiateSpotifyAuth(pendingPlaylistData?: {
   playlistName: string;
@@ -169,13 +203,13 @@ export async function initiateSpotifyAuth(pendingPlaylistData?: {
   const challenge = await generateCodeChallenge(verifier);
   const redirectUri = getSpotifyRedirectUri();
 
-  // Encode state containing CSRF + verifier + pending playlist data
+  // Encode state containing CSRF + verifier + pending playlist data safely for UTF-8
   const statePayload = {
     csrf: generateRandomString(16),
     v: verifier,
     pending: pendingPlaylistData || null,
   };
-  const state = btoa(JSON.stringify(statePayload));
+  const state = safeBase64Encode(JSON.stringify(statePayload));
 
   // Save verifier and state locally & cookie
   localStorage.setItem(STORAGE_KEYS.CODE_VERIFIER, verifier);
@@ -216,15 +250,18 @@ export async function exchangeAuthCodeForToken(
   // Fallback 1: extract verifier and pending data from returned state
   if (returnedState) {
     try {
-      const decoded = JSON.parse(atob(returnedState));
-      if (decoded && decoded.v) {
-        verifier = decoded.v;
-      }
-      if (decoded && decoded.pending) {
-        localStorage.setItem(
-          STORAGE_KEYS.PENDING_ACTION,
-          JSON.stringify(decoded.pending)
-        );
+      const decodedStr = safeBase64Decode(returnedState);
+      if (decodedStr) {
+        const decoded = JSON.parse(decodedStr);
+        if (decoded && decoded.v) {
+          verifier = decoded.v;
+        }
+        if (decoded && decoded.pending) {
+          localStorage.setItem(
+            STORAGE_KEYS.PENDING_ACTION,
+            JSON.stringify(decoded.pending)
+          );
+        }
       }
     } catch {
       // ignore
