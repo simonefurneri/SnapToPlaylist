@@ -443,7 +443,78 @@ function isTrackGenuineMatch(
   return true;
 }
 
-// Search a track on Spotify with strict validation
+interface CachedTrackMatch {
+  found: boolean;
+  spotifyUri?: string;
+  spotifyTrackName?: string;
+  spotifyArtistName?: string;
+  spotifyAlbumCover?: string;
+  spotifyTrackUrl?: string;
+  spotifyPreviewUrl?: string | null;
+  cachedAt: number;
+}
+
+const memoryTrackCache = new Map<string, CachedTrackMatch>();
+const TRACK_CACHE_PREFIX = "stp_track_cache_";
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function getTrackCacheKey(title: string, artist: string): string {
+  const normTitle = normalizeTrackString(title);
+  const normArtist = normalizeTrackString(artist);
+  return `${normTitle}__${normArtist}`;
+}
+
+export function getCachedTrack(title: string, artist: string): CachedTrackMatch | null {
+  const key = getTrackCacheKey(title, artist);
+
+  // 1. Check in-memory cache first
+  const inMemory = memoryTrackCache.get(key);
+  if (inMemory && Date.now() - inMemory.cachedAt < CACHE_TTL_MS) {
+    return inMemory;
+  }
+
+  // 2. Check localStorage
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem(`${TRACK_CACHE_PREFIX}${key}`);
+      if (raw) {
+        const parsed: CachedTrackMatch = JSON.parse(raw);
+        if (parsed && Date.now() - parsed.cachedAt < CACHE_TTL_MS) {
+          memoryTrackCache.set(key, parsed);
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
+
+export function setCachedTrack(
+  title: string,
+  artist: string,
+  data: Omit<CachedTrackMatch, "cachedAt">
+): void {
+  const key = getTrackCacheKey(title, artist);
+  const item: CachedTrackMatch = {
+    ...data,
+    cachedAt: Date.now(),
+  };
+
+  memoryTrackCache.set(key, item);
+
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(`${TRACK_CACHE_PREFIX}${key}`, JSON.stringify(item));
+    } catch {
+      // ignore
+    }
+  }
+}
+
+// Search a track on Spotify with strict validation, caching and micro-retry
 export async function searchSpotifyTrack(
   accessToken: string,
   title: string,
@@ -456,7 +527,23 @@ export async function searchSpotifyTrack(
   spotifyAlbumCover?: string;
   spotifyTrackUrl?: string;
   spotifyPreviewUrl?: string | null;
+  fromCache?: boolean;
 }> {
+  // 1. Check local & memory cache first to save API quota
+  const cached = getCachedTrack(title, artist);
+  if (cached) {
+    return {
+      found: cached.found,
+      spotifyUri: cached.spotifyUri,
+      spotifyTrackName: cached.spotifyTrackName,
+      spotifyArtistName: cached.spotifyArtistName,
+      spotifyAlbumCover: cached.spotifyAlbumCover,
+      spotifyTrackUrl: cached.spotifyTrackUrl,
+      spotifyPreviewUrl: cached.spotifyPreviewUrl,
+      fromCache: true,
+    };
+  }
+
   const cleanTitle = title
     .replace(/[([].*?[)\]]/g, "")
     .replace(/feat\..*$/i, "")
@@ -470,6 +557,7 @@ export async function searchSpotifyTrack(
     .trim();
 
   if (!cleanTitle) {
+    setCachedTrack(title, artist, { found: false });
     return { found: false };
   }
 
@@ -488,11 +576,22 @@ export async function searchSpotifyTrack(
       const url = `${SPOTIFY_API_BASE}/search?q=${encodeURIComponent(
         q
       )}&type=track&limit=5`;
-      const res = await fetch(url, {
+
+      let res = await fetch(url, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
       });
+
+      // Micro-retry on 429 (wait 2.5s and retry once before failing)
+      if (res.status === 429) {
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+      }
 
       if (res.status === 429) {
         throw new SpotifyRateLimitError(
@@ -518,7 +617,7 @@ export async function searchSpotifyTrack(
               item.artists
             )
           ) {
-            return {
+            const matchedData = {
               found: true,
               spotifyUri: item.uri,
               spotifyTrackName: item.name,
@@ -527,6 +626,10 @@ export async function searchSpotifyTrack(
               spotifyTrackUrl: item.external_urls?.spotify || "",
               spotifyPreviewUrl: item.preview_url,
             };
+
+            // Save in cache
+            setCachedTrack(title, artist, matchedData);
+            return matchedData;
           }
         }
       }
@@ -541,6 +644,8 @@ export async function searchSpotifyTrack(
     }
   }
 
+  // Not found - cache negative result as well to avoid repeating failed searches
+  setCachedTrack(title, artist, { found: false });
   return { found: false };
 }
 

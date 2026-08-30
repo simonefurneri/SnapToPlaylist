@@ -292,6 +292,7 @@ function MainAppContent() {
 
         try {
           const match = await searchSpotifyTrack(token, song.title, song.artist);
+
           if (match.found && match.spotifyUri) {
             updatedSongs[i] = {
               ...song,
@@ -310,6 +311,12 @@ function MainAppContent() {
               spotifyUri: undefined,
               spotifyAlbumCover: undefined,
             };
+          }
+
+          // If the track required an actual API network call (not from cache), add a small pacing delay (180ms)
+          // to prevent Spotify 30s rolling-window burst rate limit spikes
+          if (!match.fromCache && i < updatedSongs.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 180));
           }
         } catch (songErr: unknown) {
           // Rate limit error: immediately halt searching subsequent songs
