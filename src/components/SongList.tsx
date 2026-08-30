@@ -51,9 +51,18 @@ export function SongList({
   statusStepText,
   onReset,
 }: SongListProps) {
+  // Title editing state
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editingSongId, setEditingSongId] = useState<string | null>(null);
+  const [draftPlaylistName, setDraftPlaylistName] = useState(playlistName);
   const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Song item editing state
+  const [editingSongId, setEditingSongId] = useState<string | null>(null);
+  const [editingSongDraft, setEditingSongDraft] = useState<{
+    id: string;
+    title: string;
+    artist: string;
+  } | null>(null);
 
   const foundSongs = songs.filter((s) => s.status === "found");
   const notFoundSongs = songs.filter((s) => s.status === "not_found");
@@ -62,13 +71,77 @@ export function SongList({
   const hasUncheckedChanges = pendingSongs.length > 0;
   const isFullyChecked = songs.length > 0 && !hasUncheckedChanges;
 
+  // Sync draft title when prop changes
+  useEffect(() => {
+    setDraftPlaylistName(playlistName);
+  }, [playlistName]);
+
   // Auto-focus title input when edit mode is toggled
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
+      setDraftPlaylistName(playlistName);
       titleInputRef.current.focus();
       titleInputRef.current.select();
     }
-  }, [isEditingTitle]);
+  }, [isEditingTitle, playlistName]);
+
+  // Global ESC key listener to cancel any active editing
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isEditingTitle) {
+          setDraftPlaylistName(playlistName);
+          setIsEditingTitle(false);
+        }
+        if (editingSongId) {
+          setEditingSongId(null);
+          setEditingSongDraft(null);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isEditingTitle, editingSongId, playlistName]);
+
+  // Start editing a song
+  const startEditingSong = (song: ExtractedSong) => {
+    setEditingSongId(song.id);
+    setEditingSongDraft({
+      id: song.id,
+      title: song.title,
+      artist: song.artist,
+    });
+  };
+
+  // Commit edited song
+  const saveEditedSong = () => {
+    if (editingSongDraft && editingSongId) {
+      onUpdateSong(editingSongId, {
+        title: editingSongDraft.title.trim() || "Senza titolo",
+        artist: editingSongDraft.artist.trim(),
+      });
+    }
+    setEditingSongId(null);
+    setEditingSongDraft(null);
+  };
+
+  // Cancel song editing (ESC)
+  const cancelEditedSong = () => {
+    setEditingSongId(null);
+    setEditingSongDraft(null);
+  };
+
+  // Commit playlist title
+  const savePlaylistTitle = () => {
+    onPlaylistNameChange(draftPlaylistName.trim() || playlistName);
+    setIsEditingTitle(false);
+  };
+
+  // Cancel playlist title editing (ESC)
+  const cancelPlaylistTitle = () => {
+    setDraftPlaylistName(playlistName);
+    setIsEditingTitle(false);
+  };
 
   // Smooth scroll to follow active checking song
   useEffect(() => {
@@ -95,50 +168,51 @@ export function SongList({
       >
         <div className="absolute top-0 right-0 w-80 h-80 bg-[#1DB954]/5 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 relative z-10">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 relative z-10 w-full min-w-0">
           {/* Title Area */}
-          <div className="flex-1 space-y-2">
+          <div className="flex-1 min-w-0 space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#1DB954] flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5" /> Nome Playlist
               </span>
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 font-medium">
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 font-medium flex-shrink-0">
                 {songs.length} {songs.length === 1 ? "brano" : "brani"}
               </span>
             </div>
 
             {/* Editable Title Input */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full min-w-0">
               {isEditingTitle ? (
-                <div className="flex items-center gap-2 w-full">
+                <div className="flex items-center gap-2 w-full min-w-0">
                   <input
                     ref={titleInputRef}
                     type="text"
-                    value={playlistName}
-                    onChange={(e) => onPlaylistNameChange(e.target.value)}
+                    value={draftPlaylistName}
+                    onChange={(e) => setDraftPlaylistName(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") setIsEditingTitle(false);
+                      if (e.key === "Enter") savePlaylistTitle();
+                      if (e.key === "Escape") cancelPlaylistTitle();
                     }}
-                    placeholder="Nome della playlist..."
-                    className="text-lg sm:text-2xl font-black bg-neutral-950 border border-[#1DB954] rounded-xl px-3 py-1.5 text-white focus:outline-none w-full shadow-inner"
+                    placeholder="Nome della playlist... (ESC per annullare)"
+                    className="text-base sm:text-xl font-black bg-neutral-950 border border-[#1DB954] rounded-xl px-3 py-1.5 text-white focus:outline-none w-full min-w-0 shadow-inner"
                   />
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     type="button"
-                    onClick={() => setIsEditingTitle(false)}
+                    onClick={savePlaylistTitle}
                     className="p-2 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-bold transition-colors cursor-pointer flex-shrink-0"
-                    title="Conferma nome"
+                    title="Conferma nome (o premi Invio)"
                   >
-                    <Check className="w-5 h-5" />
+                    <Check className="w-4 h-4 sm:w-5 sm:h-5" />
                   </motion.button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2.5 group/title w-full">
+                <div className="flex items-center gap-2 group/title w-full min-w-0">
                   <h2
                     onClick={() => setIsEditingTitle(true)}
-                    className="text-lg sm:text-2xl font-black text-white hover:text-emerald-300 transition-colors cursor-pointer truncate max-w-full"
-                    title="Clicca per modificare il nome"
+                    className="text-base sm:text-xl md:text-2xl font-black text-white hover:text-emerald-300 transition-colors cursor-pointer truncate min-w-0 flex-1"
+                    title={playlistName || "La mia Playlist Snap"}
                   >
                     {playlistName || "La mia Playlist Snap"}
                   </h2>
@@ -148,7 +222,7 @@ export function SongList({
                     type="button"
                     onClick={() => setIsEditingTitle(true)}
                     className="p-1.5 rounded-lg text-neutral-400 hover:text-[#1DB954] hover:bg-neutral-800/80 transition-colors cursor-pointer flex-shrink-0"
-                    title="Modifica nome playlist"
+                    title="Modifica nome playlist (ESC per annullare)"
                   >
                     <Edit2 className="w-4 h-4" />
                   </motion.button>
@@ -158,7 +232,7 @@ export function SongList({
           </div>
 
           {/* Action buttons on top */}
-          <div className="flex items-center gap-2 flex-shrink-0 self-start">
+          <div className="flex items-center gap-2 flex-shrink-0 self-start sm:self-center">
             <motion.button
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.96 }}
@@ -332,20 +406,24 @@ export function SongList({
 
                   {/* Middle: Title & Artist / Edit Inputs */}
                   <div className="flex-1 min-w-0">
-                    {isEditing ? (
+                    {isEditing && editingSongDraft ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 my-1">
                         <div>
                           <label className="text-[10px] text-neutral-400 block mb-0.5">Titolo</label>
                           <input
                             type="text"
-                            value={song.title}
+                            value={editingSongDraft.title}
                             onChange={(e) =>
-                              onUpdateSong(song.id, { title: e.target.value })
+                              setEditingSongDraft({
+                                ...editingSongDraft,
+                                title: e.target.value,
+                              })
                             }
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") setEditingSongId(null);
+                              if (e.key === "Enter") saveEditedSong();
+                              if (e.key === "Escape") cancelEditedSong();
                             }}
-                            placeholder="Titolo"
+                            placeholder="Titolo (ESC per annullare)"
                             className="bg-neutral-950 border border-neutral-700 rounded-lg px-2.5 py-1 text-xs sm:text-sm text-white focus:outline-none focus:border-[#1DB954] w-full"
                           />
                         </div>
@@ -353,14 +431,18 @@ export function SongList({
                           <label className="text-[10px] text-neutral-400 block mb-0.5">Artista</label>
                           <input
                             type="text"
-                            value={song.artist}
+                            value={editingSongDraft.artist}
                             onChange={(e) =>
-                              onUpdateSong(song.id, { artist: e.target.value })
+                              setEditingSongDraft({
+                                ...editingSongDraft,
+                                artist: e.target.value,
+                              })
                             }
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") setEditingSongId(null);
+                              if (e.key === "Enter") saveEditedSong();
+                              if (e.key === "Escape") cancelEditedSong();
                             }}
-                            placeholder="Artista"
+                            placeholder="Artista (ESC per annullare)"
                             className="bg-neutral-950 border border-neutral-700 rounded-lg px-2.5 py-1 text-xs sm:text-sm text-white focus:outline-none focus:border-[#1DB954] w-full"
                           />
                         </div>
@@ -419,8 +501,9 @@ export function SongList({
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         type="button"
-                        onClick={() => setEditingSongId(null)}
+                        onClick={saveEditedSong}
                         className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-800/60 cursor-pointer flex items-center gap-1"
+                        title="Salva modifiche (Invio, ESC per annullare)"
                       >
                         <Check className="w-3.5 h-3.5" />
                         <span>Fine</span>
@@ -430,10 +513,10 @@ export function SongList({
                         whileHover={{ scale: 1.15 }}
                         whileTap={{ scale: 0.9 }}
                         type="button"
-                        onClick={() => setEditingSongId(song.id)}
+                        onClick={() => startEditingSong(song)}
                         disabled={isVerifying || isCreating}
                         className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-30"
-                        title="Modifica brano (Invio per salvare)"
+                        title="Modifica brano (Invio per salvare, ESC per annullare)"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </motion.button>
