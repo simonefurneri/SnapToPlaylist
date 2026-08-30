@@ -9,6 +9,17 @@ const SPOTIFY_AUTH_ENDPOINT = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
 const SPOTIFY_API_BASE = "https://api.spotify.com/v1";
 
+export class SpotifyRateLimitError extends Error {
+  retryAfter?: number;
+
+  constructor(message: string = "Limite di richieste Spotify raggiunto (429 Too Many Requests).", retryAfter?: number) {
+    super(message);
+    this.name = "SpotifyRateLimitError";
+    this.retryAfter = retryAfter;
+    Object.setPrototypeOf(this, SpotifyRateLimitError.prototype);
+  }
+}
+
 const STORAGE_KEYS = {
   ACCESS_TOKEN: "stp_spotify_access_token",
   REFRESH_TOKEN: "stp_spotify_refresh_token",
@@ -356,6 +367,14 @@ export async function fetchCurrentUserProfile(
   });
 
   if (!res.ok) {
+    if (res.status === 429) {
+      const retryHeader = res.headers.get("Retry-After");
+      const retryAfter = retryHeader ? parseInt(retryHeader, 10) : undefined;
+      throw new SpotifyRateLimitError(
+        "Limite di richieste Spotify raggiunto (429 Too Many Requests).",
+        !isNaN(retryAfter as number) ? retryAfter : undefined
+      );
+    }
     if (res.status === 401) {
       logoutSpotify();
       throw new Error("Sessione Spotify scaduta. Effettua nuovamente l'accesso.");
@@ -394,7 +413,6 @@ function isTrackGenuineMatch(
 
   // Title verification
   const qTitleWords = qTitle.split(" ").filter((w) => w.length > 1);
-  const rTitleWords = rTitle.split(" ").filter((w) => w.length > 1);
 
   const exactOrSubstring =
     rTitle.includes(qTitle) ||
@@ -482,6 +500,15 @@ export async function searchSpotifyTrack(
         },
       });
 
+      if (res.status === 429) {
+        const retryHeader = res.headers.get("Retry-After");
+        const retryAfter = retryHeader ? parseInt(retryHeader, 10) : undefined;
+        throw new SpotifyRateLimitError(
+          "Limite di richieste Spotify raggiunto (429 Too Many Requests).",
+          !isNaN(retryAfter as number) ? retryAfter : undefined
+        );
+      }
+
       if (res.status === 401) {
         throw new Error("Sessione Spotify scaduta.");
       }
@@ -513,7 +540,11 @@ export async function searchSpotifyTrack(
         }
       }
     } catch (err: unknown) {
-      if ((err as Error)?.message?.includes("Sessione Spotify scaduta")) {
+      if (
+        err instanceof SpotifyRateLimitError ||
+        (err as Error)?.name === "SpotifyRateLimitError" ||
+        (err as Error)?.message?.includes("Sessione Spotify scaduta")
+      ) {
         throw err;
       }
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   ExtractedSong,
@@ -17,6 +17,7 @@ import {
   createPlaylistAndAddTracks,
   getAndClearPendingPlaylistAction,
   getSpotifyClientId,
+  SpotifyRateLimitError,
 } from "@/lib/spotify";
 import { Navbar } from "@/components/Navbar";
 import { ImageUploader } from "@/components/ImageUploader";
@@ -24,6 +25,7 @@ import { SongList } from "@/components/SongList";
 import { AccessGate } from "@/components/AccessGate";
 import { CreatePlaylistConfirmModal } from "@/components/CreatePlaylistConfirmModal";
 import { PlaylistCreatedModal } from "@/components/PlaylistCreatedModal";
+import { SpotifyRateLimitModal } from "@/components/SpotifyRateLimitModal";
 import {
   AlertCircle,
   CheckCircle2,
@@ -43,9 +45,20 @@ function MainAppContent() {
   const [isAccessChecking, setIsAccessChecking] = useState(true);
   const [isAccessGranted, setIsAccessGranted] = useState(true);
 
+  const [initialPending] = useState(() => {
+    if (typeof window !== "undefined" && searchParams.get("spotify_auth")) {
+      return getAndClearPendingPlaylistAction();
+    }
+    return null;
+  });
+
   // App State
-  const [songs, setSongs] = useState<ExtractedSong[]>([]);
-  const [playlistName, setPlaylistName] = useState<string>("");
+  const [songs, setSongs] = useState<ExtractedSong[]>(
+    () => initialPending?.songs || []
+  );
+  const [playlistName, setPlaylistName] = useState<string>(
+    () => initialPending?.playlistName || ""
+  );
   const [userProfile, setUserProfile] = useState<SpotifyUserProfile | null>(null);
 
   // Status & Progress
@@ -56,76 +69,75 @@ function MainAppContent() {
     null
   );
   const [statusStepText, setStatusStepText] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(() => {
+    const err = searchParams.get("error");
+    return err ? decodeURIComponent(err) : null;
+  });
+  const [successMessage, setSuccessMessage] = useState<string | null>(() => {
+    return searchParams.get("spotify_auth")
+      ? "Login Spotify effettuato con successo!"
+      : null;
+  });
 
   // Modals
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(
+    () => !!initialPending?.autoCreateAfterAuth
+  );
+  const [isRateLimitModalOpen, setIsRateLimitModalOpen] = useState(false);
+  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(null);
   const [createdPlaylistResult, setCreatedPlaylistResult] =
     useState<CreatedPlaylistResult | null>(null);
 
-  // 1. Verify App Password Protection on load
-  const checkAccess = useCallback(async () => {
-    try {
-      const res = await fetch("/api/auth/check");
-      if (res.ok) {
-        const data = await res.json();
-        setIsAccessGranted(!data.isProtected || data.isAuthorized);
-      } else {
-        setIsAccessGranted(true);
-      }
-    } catch {
-      setIsAccessGranted(true);
-    } finally {
-      setIsAccessChecking(false);
-    }
-  }, []);
-
-  // 2. Check existing Spotify session
-  const loadProfile = useCallback(async () => {
-    const token = getStoredAccessToken();
-    if (token) {
-      try {
-        const profile = await fetchCurrentUserProfile(token);
-        setUserProfile(profile);
-      } catch (err: unknown) {
-        console.warn("Errore sessione Spotify:", err);
-        setUserProfile(null);
-      }
-    } else {
-      setUserProfile(null);
-    }
-  }, []);
-
-  // 3. Initial Mount
+  // 1. Initial Mount & Auth Check
   useEffect(() => {
-    checkAccess();
-    loadProfile();
+    let isMounted = true;
 
-    const queryError = searchParams.get("error");
-    const queryAuthSuccess = searchParams.get("spotify_auth");
+    const initialize = async () => {
+      try {
+        const res = await fetch("/api/auth/check");
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted) setIsAccessGranted(!data.isProtected || data.isAuthorized);
+        } else {
+          if (isMounted) setIsAccessGranted(true);
+        }
+      } catch {
+        if (isMounted) setIsAccessGranted(true);
+      } finally {
+        if (isMounted) setIsAccessChecking(false);
+      }
 
-    if (queryError) {
-      setErrorMessage(decodeURIComponent(queryError));
-    }
-
-    if (queryAuthSuccess) {
-      setSuccessMessage("Login Spotify effettuato con successo!");
-      setTimeout(() => setSuccessMessage(null), 4000);
-
-      // Restore pending action if any
-      const pending = getAndClearPendingPlaylistAction();
-      if (pending && pending.songs && pending.songs.length > 0) {
-        setPlaylistName(pending.playlistName || "La mia Playlist Snap");
-        setSongs(pending.songs);
-
-        if (pending.autoCreateAfterAuth) {
-          setIsConfirmModalOpen(true);
+      const token = getStoredAccessToken();
+      if (token) {
+        try {
+          const profile = await fetchCurrentUserProfile(token);
+          if (isMounted) setUserProfile(profile);
+        } catch (err: unknown) {
+          console.warn("Errore sessione Spotify:", err);
+          if (isMounted) setUserProfile(null);
         }
       }
+    };
+
+    initialize();
+
+    if (searchParams.get("spotify_auth")) {
       router.replace("/");
     }
-  }, [searchParams, router, loadProfile, checkAccess]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [searchParams, router]);
+
+  // 2. Auto-dismiss success notification banner after 4 seconds
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => {
+      setSuccessMessage(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
 
   // 4. Gemini Vision Extraction
   const handleAnalyzeImage = async (
@@ -191,7 +203,6 @@ function MainAppContent() {
       setSuccessMessage(
         `Estratte con successo ${formattedSongs.length} canzoni con Gemini Vision!`
       );
-      setTimeout(() => setSuccessMessage(null), 3500);
     } catch (err: unknown) {
       const error = err as Error;
       setErrorMessage(
@@ -238,7 +249,7 @@ function MainAppContent() {
   };
 
   // 6. Step 1: Verify Spotify Matches
-  const handleVerifySpotifyTracks = async () => {
+  const handleVerifySpotifyTracks = async (forceAll: boolean = false) => {
     if (songs.length === 0) return;
 
     const token = getStoredAccessToken();
@@ -268,6 +279,12 @@ function MainAppContent() {
     try {
       for (let i = 0; i < updatedSongs.length; i++) {
         const song = updatedSongs[i];
+
+        // If already found and not forced, skip searching again to preserve quota
+        if (!forceAll && song.status === "found" && song.spotifyUri) {
+          continue;
+        }
+
         setActiveCheckingSongId(song.id);
         setStatusStepText(`Verifica (${i + 1}/${updatedSongs.length}): "${song.title}"...`);
 
@@ -295,7 +312,47 @@ function MainAppContent() {
               spotifyAlbumCover: undefined,
             };
           }
-        } catch {
+        } catch (songErr: unknown) {
+          // Rate limit error: immediately halt searching subsequent songs
+          if (
+            songErr instanceof SpotifyRateLimitError ||
+            (songErr as Error)?.name === "SpotifyRateLimitError"
+          ) {
+            const retrySec = (songErr as SpotifyRateLimitError).retryAfter || null;
+
+            // Reset current track and any other tracks currently in searching state back to pending
+            for (let k = 0; k < updatedSongs.length; k++) {
+              if (updatedSongs[k].status === "searching") {
+                updatedSongs[k] = { ...updatedSongs[k], status: "pending" };
+              }
+            }
+            setSongs([...updatedSongs]);
+
+            // Open Rate Limit modal on first occurrence
+            setRateLimitRetryAfter(retrySec);
+            setIsRateLimitModalOpen(true);
+
+            setErrorMessage(
+              `Limite di richieste Spotify raggiunto (Rate Limit 429). Ricerca interrotta per i brani successivi.${
+                retrySec ? ` Attendi circa ${retrySec}s prima di riprovare.` : ""
+              }`
+            );
+            setStatusStepText(
+              `Verifica interrotta per Rate Limit Spotify al brano ${i + 1}/${updatedSongs.length}.`
+            );
+
+            // Block subsequent song searches
+            break;
+          }
+
+          if ((songErr as Error)?.message?.includes("Sessione Spotify scaduta")) {
+            logoutSpotify();
+            setUserProfile(null);
+            setErrorMessage("Sessione Spotify scaduta. Effettua nuovamente il login.");
+            break;
+          }
+
+          // Generic error for this specific song
           updatedSongs[i] = {
             ...song,
             status: "not_found",
@@ -313,7 +370,17 @@ function MainAppContent() {
       );
     } catch (err: unknown) {
       const error = err as Error;
-      setErrorMessage(error.message || "Errore durante la verifica dei brani.");
+      if (
+        error instanceof SpotifyRateLimitError ||
+        error?.name === "SpotifyRateLimitError"
+      ) {
+        const retrySec = (error as SpotifyRateLimitError).retryAfter || null;
+        setRateLimitRetryAfter(retrySec);
+        setIsRateLimitModalOpen(true);
+        setErrorMessage("Limite di richieste Spotify raggiunto (Rate Limit 429).");
+      } else {
+        setErrorMessage(error.message || "Errore durante la verifica dei brani.");
+      }
     } finally {
       setIsVerifying(false);
       setActiveCheckingSongId(null);
@@ -341,7 +408,7 @@ function MainAppContent() {
 
   // 8. Step 3: Execute Playlist Creation on Spotify
   const handleExecuteCreateSpotifyPlaylist = async () => {
-    let token = getStoredAccessToken();
+    const token = getStoredAccessToken();
 
     if (!token) {
       await initiateSpotifyAuth({
@@ -368,7 +435,16 @@ function MainAppContent() {
       setCreatedPlaylistResult(result);
     } catch (err: unknown) {
       const error = err as Error;
-      if (error.message.includes("401") || error.message.includes("scaduta")) {
+      if (
+        error instanceof SpotifyRateLimitError ||
+        error?.name === "SpotifyRateLimitError"
+      ) {
+        const retrySec = (error as SpotifyRateLimitError).retryAfter || null;
+        setIsConfirmModalOpen(false);
+        setRateLimitRetryAfter(retrySec);
+        setIsRateLimitModalOpen(true);
+        setErrorMessage("Limite di richieste Spotify raggiunto (Rate Limit 429). Riprova tra poco.");
+      } else if (error.message.includes("401") || error.message.includes("scaduta")) {
         logoutSpotify();
         setUserProfile(null);
         setErrorMessage("Sessione Spotify scaduta. Effettua nuovamente il login.");
@@ -385,7 +461,6 @@ function MainAppContent() {
     logoutSpotify();
     setUserProfile(null);
     setSuccessMessage("Disconnesso da Spotify.");
-    setTimeout(() => setSuccessMessage(null), 3000);
   };
 
   // Reset to initial screen
@@ -397,6 +472,8 @@ function MainAppContent() {
     setActiveCheckingSongId(null);
     setStatusStepText("");
     setIsConfirmModalOpen(false);
+    setIsRateLimitModalOpen(false);
+    setRateLimitRetryAfter(null);
   };
 
   // Show loading spinner while checking access
@@ -603,6 +680,17 @@ function MainAppContent() {
       <PlaylistCreatedModal
         result={createdPlaylistResult}
         onClose={() => setCreatedPlaylistResult(null)}
+      />
+
+      {/* Spotify Rate Limit Modal */}
+      <SpotifyRateLimitModal
+        isOpen={isRateLimitModalOpen}
+        retryAfter={rateLimitRetryAfter}
+        onClose={() => setIsRateLimitModalOpen(false)}
+        onRetry={() => {
+          setIsRateLimitModalOpen(false);
+          handleVerifySpotifyTracks(false);
+        }}
       />
     </div>
   );

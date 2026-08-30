@@ -54,7 +54,13 @@ export function SongList({
   // Title editing state
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [draftPlaylistName, setDraftPlaylistName] = useState(playlistName);
+  const [prevPlaylistName, setPrevPlaylistName] = useState(playlistName);
   const titleInputRef = useRef<HTMLInputElement>(null);
+
+  if (playlistName !== prevPlaylistName) {
+    setPrevPlaylistName(playlistName);
+    setDraftPlaylistName(playlistName);
+  }
 
   // Song item editing state
   const [editingSongId, setEditingSongId] = useState<string | null>(null);
@@ -71,19 +77,13 @@ export function SongList({
   const hasUncheckedChanges = pendingSongs.length > 0;
   const isFullyChecked = songs.length > 0 && !hasUncheckedChanges;
 
-  // Sync draft title when prop changes
-  useEffect(() => {
-    setDraftPlaylistName(playlistName);
-  }, [playlistName]);
-
   // Auto-focus title input when edit mode is toggled
   useEffect(() => {
     if (isEditingTitle && titleInputRef.current) {
-      setDraftPlaylistName(playlistName);
       titleInputRef.current.focus();
       titleInputRef.current.select();
     }
-  }, [isEditingTitle, playlistName]);
+  }, [isEditingTitle]);
 
   // Global ESC key listener to cancel any active editing
   useEffect(() => {
