@@ -402,68 +402,173 @@ export async function fetchCurrentUserProfile(
   return res.json();
 }
 
-// Helper: Normalize string for comparison
-function normalizeTrackString(str: string): string {
-  return (str || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[([].*?[)\]]/g, "")
-    .replace(/[^a-z0-9\s]/g, " ")
+// Sanitize search query for Spotify API (preserves all original words, removes Lucene syntax chars)
+function sanitizeSearchQuery(title: string, artist: string): string {
+  const raw = `${title || ""} ${artist || ""}`;
+  return raw
+    .replace(/(^|\s|[([{"'])f[\*#@!_]{1,4}kin(?=$|\s|[.,!?\])}'"])/gi, "$1fucking")
+    .replace(/(^|\s|[([{"'])f[\*#@!_]{1,4}king(?=$|\s|[.,!?\])}'"])/gi, "$1fucking")
+    .replace(/(^|\s|[([{"'])f[\*#@!_]{1,4}k(?=$|\s|[.,!?\])}'"])/gi, "$1fuck")
+    .replace(/(^|\s|[([{"'])f\*ck(?=$|\s|[.,!?\])}'"])/gi, "$1fuck")
+    .replace(/(^|\s|[([{"'])f[\*#@!_]{2,4}(?=$|\s|[.,!?\])}'"])/gi, "$1fuck")
+    .replace(/(^|\s|[([{"'])s[\*#@!_]{1,4}t(?=$|\s|[.,!?\])}'"])/gi, "$1shit")
+    .replace(/(^|\s|[([{"'])b[\*#@!_]{1,4}ch(?=$|\s|[.,!?\])}'"])/gi, "$1bitch")
+    .replace(/["':;()[\]{}<>|\\^~]/g, " ")
+    .replace(/\*+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// Check if a Spotify result genuinely matches the requested title and artist
-function isTrackGenuineMatch(
-  queryTitle: string,
-  queryArtist: string,
-  resultTitle: string,
-  resultArtists: Array<{ name: string }>
-): boolean {
-  const qTitle = normalizeTrackString(queryTitle);
-  const rTitle = normalizeTrackString(resultTitle);
-  const qArtist = normalizeTrackString(queryArtist);
-  const rArtists = resultArtists.map((a) => normalizeTrackString(a.name));
+// Normalize strings for comparison & scoring (removes noise, parenthesis, diacritics)
+function normalizeTrackString(str: string): string {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[([].*?[)\]]/g, " ") // remove parenthesis like (feat. X) or (Remastered)
+    .replace(/(^|\s|[([{"'])f[\*#@!_]{1,4}k(?=$|\s|[.,!?\])}'"])/gi, "$1fuck")
+    .replace(/(^|\s|[([{"'])s[\*#@!_]{1,4}t(?=$|\s|[.,!?\])}'"])/gi, "$1shit")
+    .replace(/(^|\s|[([{"'])b[\*#@!_]{1,4}ch(?=$|\s|[.,!?\])}'"])/gi, "$1bitch")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\b(\w+)in\b/g, "$1ing") // map somethin -> something, fuckin -> fucking
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  if (!qTitle || qTitle.length < 2) return false;
+// Levenshtein distance for typo tolerance
+function levenshteinDistance(s1: string, s2: string): number {
+  if (s1 === s2) return 0;
+  if (!s1.length) return s2.length;
+  if (!s2.length) return s1.length;
 
-  // Title verification
-  const qTitleWords = qTitle.split(" ").filter((w) => w.length > 1);
-
-  const exactOrSubstring =
-    rTitle.includes(qTitle) ||
-    qTitle.includes(rTitle) ||
-    rTitle.replace(/\s/g, "") === qTitle.replace(/\s/g, "");
-
-  let titleMatches = exactOrSubstring;
-  if (!titleMatches && qTitleWords.length > 0) {
-    const matchedCount = qTitleWords.filter((w) => rTitle.includes(w)).length;
-    titleMatches = matchedCount / qTitleWords.length >= 0.6;
+  const d: number[][] = [];
+  for (let i = 0; i <= s1.length; i++) {
+    d[i] = [i];
+  }
+  for (let j = 0; j <= s2.length; j++) {
+    d[0][j] = j;
   }
 
-  if (!titleMatches) {
-    return false;
-  }
-
-  // Artist verification (if artist was supplied by user)
-  if (qArtist && qArtist.length > 1) {
-    const qArtistWords = qArtist.split(" ").filter((w) => w.length > 1);
-    const artistMatches = rArtists.some((rArt) => {
-      if (rArt.includes(qArtist) || qArtist.includes(rArt)) return true;
-      if (qArtistWords.length > 0) {
-        const matchCount = qArtistWords.filter((w) => rArt.includes(w)).length;
-        return matchCount / qArtistWords.length >= 0.5;
-      }
-      return false;
-    });
-
-    if (!artistMatches) {
-      return false;
+  for (let i = 1; i <= s1.length; i++) {
+    for (let j = 1; j <= s2.length; j++) {
+      const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(
+        d[i - 1][j] + 1,
+        d[i][j - 1] + 1,
+        d[i - 1][j - 1] + cost
+      );
     }
   }
 
-  return true;
+  return d[s1.length][s2.length];
+}
+
+// Calculate similarity ratio (0.0 to 1.0)
+function calculateStringSimilarity(s1: string, s2: string): number {
+  const norm1 = normalizeTrackString(s1);
+  const norm2 = normalizeTrackString(s2);
+
+  if (!norm1 || !norm2) return 0;
+  if (norm1 === norm2) return 1.0;
+
+  // Substring check
+  if (norm1.includes(norm2) || norm2.includes(norm1)) {
+    const minLen = Math.min(norm1.length, norm2.length);
+    const maxLen = Math.max(norm1.length, norm2.length);
+    return Math.max(0.85, minLen / maxLen);
+  }
+
+  // Token / word overlap
+  const words1 = norm1.split(" ").filter((w) => w.length > 1);
+  const words2 = norm2.split(" ").filter((w) => w.length > 1);
+
+  if (words1.length > 0 && words2.length > 0) {
+    const matchedCount = words1.filter((w) =>
+      words2.some((w2) => w2 === w || w2.includes(w) || w.includes(w2))
+    ).length;
+    const tokenScore = (2 * matchedCount) / (words1.length + words2.length);
+    if (tokenScore >= 0.7) {
+      return tokenScore;
+    }
+  }
+
+  // Levenshtein similarity
+  const maxLen = Math.max(norm1.length, norm2.length);
+  const dist = levenshteinDistance(norm1, norm2);
+  const levScore = 1 - dist / maxLen;
+
+  return Math.max(0, levScore);
+}
+
+// Calculate overall score for a candidate Spotify track (0 to 1.0)
+function scoreTrackMatch(
+  queryTitle: string,
+  queryArtist: string,
+  candidate: {
+    name: string;
+    artists: Array<{ name: string }>;
+    popularity?: number;
+  }
+): number {
+  const normQTitle = normalizeTrackString(queryTitle);
+  const normQArtist = normalizeTrackString(queryArtist);
+  const popularityScore =
+    Math.min(100, Math.max(0, candidate.popularity || 0)) / 100;
+
+  if (!normQTitle) return 0;
+
+  // Title similarity
+  const titleSim = calculateStringSimilarity(queryTitle, candidate.name);
+
+  // Artist similarity (check each artist and full artist list)
+  let artistSim = 0;
+  if (normQArtist) {
+    const candidateArtistNames = candidate.artists.map((a) => a.name);
+    const joinedArtists = candidateArtistNames.join(" ");
+
+    const individualSims = candidateArtistNames.map((name) =>
+      calculateStringSimilarity(queryArtist, name)
+    );
+    const joinedSim = calculateStringSimilarity(queryArtist, joinedArtists);
+    artistSim = Math.max(joinedSim, ...individualSims, 0);
+  } else {
+    // If no artist was specified by user, artist match is neutral / doesn't penalize
+    artistSim = 0.8;
+  }
+
+  // Exact or near-exact title match
+  const isExactTitle = titleSim >= 0.95;
+  const isDistinctiveTitle =
+    normQTitle.length >= 8 || normQTitle.split(" ").length >= 2;
+
+  // If title matches almost perfectly:
+  if (isExactTitle) {
+    if (artistSim >= 0.6) {
+      // Both match great
+      return Math.min(
+        1.0,
+        0.6 * titleSim + 0.35 * artistSim + 0.05 * popularityScore + 0.05
+      );
+    }
+    // Title is exact, but artist diverges (e.g. Wham! vs George Michael)
+    if (isDistinctiveTitle && popularityScore >= 0.4) {
+      // Distinctive title with high Spotify popularity: canonical version / artist relation
+      return Math.min(
+        1.0,
+        0.65 * titleSim + 0.15 * artistSim + 0.2 * popularityScore
+      );
+    }
+    // Generic single short word title with zero artist match (e.g. "Stay" by random person): penalize
+    if (!isDistinctiveTitle && artistSim < 0.3) {
+      return 0.4 * titleSim + 0.5 * artistSim + 0.1 * popularityScore;
+    }
+  }
+
+  // Standard weighted formula
+  const baseScore =
+    0.6 * titleSim + 0.35 * artistSim + 0.05 * popularityScore;
+  return Math.min(1.0, Math.max(0, baseScore));
 }
 
 interface CachedTrackMatch {
@@ -537,7 +642,10 @@ export function setCachedTrack(
   }
 }
 
-// Search a track on Spotify with strict validation, caching and micro-retry
+// Minimum match percentage score required to accept a Spotify track match (60%)
+const MIN_MATCH_SCORE_THRESHOLD = 0.60;
+
+// Search a track on Spotify with intelligent single query, candidate scoring, and caching
 export async function searchSpotifyTrack(
   accessToken: string,
   title: string,
@@ -574,120 +682,105 @@ export async function searchSpotifyTrack(
     }
   }
 
-  const cleanTitle = title
-    .replace(/[([].*?[)\]]/g, "")
-    .replace(/feat\..*$/i, "")
-    .replace(/ft\..*$/i, "")
-    .trim();
+  const searchQuery = sanitizeSearchQuery(title, artist);
 
-  const cleanArtist = artist
-    .replace(/[([].*?[)\]]/g, "")
-    .replace(/feat\..*$/i, "")
-    .replace(/ft\..*$/i, "")
-    .trim();
-
-  if (!cleanTitle) {
+  if (!searchQuery) {
     setCachedTrack(title, artist, { found: false });
     return { found: false };
   }
 
-  // Queries to try
-  const queries: string[] = [];
-  if (cleanTitle && cleanArtist) {
-    queries.push(`track:"${cleanTitle}" artist:"${cleanArtist}"`);
-    queries.push(`${cleanTitle} ${cleanArtist}`);
-  } else {
-    queries.push(`track:"${cleanTitle}"`);
-    queries.push(cleanTitle);
-  }
+  try {
+    const url = `${SPOTIFY_API_BASE}/search?q=${encodeURIComponent(
+      searchQuery
+    )}&type=track&limit=5`;
 
-  for (const q of queries) {
-    try {
-      const url = `${SPOTIFY_API_BASE}/search?q=${encodeURIComponent(
-        q
-      )}&type=track&limit=5`;
+    let res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
 
-      let res = await fetch(url, {
+    // Micro-retry on 429 (wait 2.5s and retry once before failing)
+    if (res.status === 429) {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      res = await fetch(url, {
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
       });
+    }
 
-      // Micro-retry on 429 (wait 2.5s and retry once before failing)
-      if (res.status === 429) {
-        await new Promise((resolve) => setTimeout(resolve, 2500));
-        res = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-      }
+    if (res.status === 429) {
+      throw new SpotifyRateLimitError(
+        "Limite di richieste Spotify raggiunto (429 Too Many Requests)."
+      );
+    }
 
-      if (res.status === 429) {
-        throw new SpotifyRateLimitError(
-          "Limite di richieste Spotify raggiunto (429 Too Many Requests)."
-        );
-      }
+    if (res.status === 403) {
+      logoutSpotify();
+      const errData = await res.json().catch(() => ({}));
+      const detail = errData?.error?.message ? ` (${errData.error.message})` : "";
+      throw new SpotifyForbiddenError(
+        `Accesso negato da Spotify (403 Forbidden)${detail}: account non autorizzato nella Developer Dashboard di Spotify.`
+      );
+    }
 
-      if (res.status === 403) {
-        logoutSpotify();
-        const errData = await res.json().catch(() => ({}));
-        const detail = errData?.error?.message ? ` (${errData.error.message})` : "";
-        throw new SpotifyForbiddenError(
-          `Accesso negato da Spotify (403 Forbidden)${detail}: account non autorizzato nella Developer Dashboard di Spotify.`
-        );
-      }
+    if (res.status === 401) {
+      logoutSpotify();
+      throw new Error("Sessione Spotify scaduta. Effettua nuovamente l'accesso.");
+    }
 
-      if (res.status === 401) {
-        logoutSpotify();
-        throw new Error("Sessione Spotify scaduta. Effettua nuovamente l'accesso.");
-      }
+    if (res.ok) {
+      const data: SpotifySearchResponse = await res.json();
+      const items = data.tracks?.items || [];
 
-      if (res.ok) {
-        const data: SpotifySearchResponse = await res.json();
-        const items = data.tracks?.items || [];
+      // Score all candidate tracks and select the best match above threshold
+      let bestMatch: {
+        item: (typeof items)[0];
+        score: number;
+      } | null = null;
 
-        // Check if any returned track strictly matches title & artist
-        for (const item of items) {
-          if (
-            isTrackGenuineMatch(
-              cleanTitle,
-              cleanArtist,
-              item.name,
-              item.artists
-            )
-          ) {
-            const matchedData = {
-              found: true,
-              spotifyUri: item.uri,
-              spotifyTrackName: item.name,
-              spotifyArtistName: item.artists.map((a) => a.name).join(", "),
-              spotifyAlbumCover: item.album?.images?.[0]?.url || "",
-              spotifyTrackUrl: item.external_urls?.spotify || "",
-              spotifyPreviewUrl: item.preview_url,
-            };
-
-            // Save in cache
-            setCachedTrack(title, artist, matchedData);
-            return matchedData;
-          }
+      for (const item of items) {
+        const score = scoreTrackMatch(title, artist, item);
+        if (
+          score >= MIN_MATCH_SCORE_THRESHOLD &&
+          (!bestMatch || score > bestMatch.score)
+        ) {
+          bestMatch = { item, score };
         }
       }
-    } catch (err: unknown) {
-      if (
-        err instanceof SpotifyRateLimitError ||
-        (err as Error)?.name === "SpotifyRateLimitError" ||
-        err instanceof SpotifyForbiddenError ||
-        (err as Error)?.name === "SpotifyForbiddenError" ||
-        (err as Error)?.message?.includes("403") ||
-        (err as Error)?.message?.includes("Sessione Spotify scaduta")
-      ) {
-        throw err;
+
+      if (bestMatch) {
+        const matchedItem = bestMatch.item;
+        const matchedData = {
+          found: true,
+          spotifyUri: matchedItem.uri,
+          spotifyTrackName: matchedItem.name,
+          spotifyArtistName: matchedItem.artists.map((a) => a.name).join(", "),
+          spotifyAlbumCover: matchedItem.album?.images?.[0]?.url || "",
+          spotifyTrackUrl: matchedItem.external_urls?.spotify || "",
+          spotifyPreviewUrl: matchedItem.preview_url,
+        };
+
+        // Save in cache
+        setCachedTrack(title, artist, matchedData);
+        return matchedData;
       }
+    }
+  } catch (err: unknown) {
+    if (
+      err instanceof SpotifyRateLimitError ||
+      (err as Error)?.name === "SpotifyRateLimitError" ||
+      err instanceof SpotifyForbiddenError ||
+      (err as Error)?.name === "SpotifyForbiddenError" ||
+      (err as Error)?.message?.includes("403") ||
+      (err as Error)?.message?.includes("Sessione Spotify scaduta")
+    ) {
+      throw err;
     }
   }
 
-  // Not found - cache negative result as well to avoid repeating failed searches
+  // Not found - cache negative result
   setCachedTrack(title, artist, { found: false });
   return { found: false };
 }

@@ -42,6 +42,7 @@ export interface SpotifyTrackItem {
     name: string;
     images: Array<{ url: string; height: number; width: number }>;
   };
+  popularity?: number;
 }
 
 export interface SpotifySearchResponse {
