@@ -4,6 +4,7 @@ import React from "react";
 import { SpotifyUserProfile } from "@/types";
 import { LogOut, ExternalLink } from "lucide-react";
 import Image from "next/image";
+import { motion } from "framer-motion";
 
 interface NavbarProps {
   userProfile: SpotifyUserProfile | null;
@@ -22,13 +23,16 @@ export function Navbar({
     <header className="border-b border-neutral-800/80 bg-neutral-950/85 backdrop-blur-md sticky top-0 z-40">
       <div className="max-w-6xl mx-auto px-3 sm:px-6 h-16 flex items-center justify-between">
         {/* Clickable Logo */}
-        <button
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
+          transition={{ type: "spring", stiffness: 400, damping: 20 }}
           type="button"
           onClick={onResetToHome}
-          className="flex items-center gap-2.5 sm:gap-3 group text-left cursor-pointer transition-transform active:scale-95 duration-200"
+          className="flex items-center gap-2.5 sm:gap-3 group text-left cursor-pointer"
           title="Torna alla Home e ricarica un nuovo screenshot"
         >
-          <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-lg shadow-[#1DB954]/20 group-hover:shadow-[#1DB954]/40 group-hover:scale-105 transition-all duration-300">
+          <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-lg shadow-[#1DB954]/20 group-hover:shadow-[#1DB954]/40 transition-shadow duration-300">
             <Image
               src="/logo.svg"
               alt="SnapToPlaylist Logo"
@@ -39,7 +43,7 @@ export function Navbar({
           </div>
           <div>
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <span className="font-black text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-neutral-100 to-neutral-300 bg-clip-text text-transparent group-hover:from-emerald-400 group-hover:to-cyan-400 transition-all duration-300">
+              <span className="font-black text-base sm:text-lg tracking-tight bg-gradient-to-r from-white via-neutral-100 to-neutral-300 bg-clip-text text-transparent group-hover:from-emerald-400 group-hover:to-cyan-400 transition-colors duration-300">
                 SnapToPlaylist
               </span>
             </div>
@@ -47,7 +51,7 @@ export function Navbar({
               Screenshot to Spotify AI
             </p>
           </div>
-        </button>
+        </motion.button>
 
         {/* User / Auth section */}
         <div className="flex items-center gap-2">
@@ -81,24 +85,29 @@ export function Navbar({
                 )}
               </div>
 
-              <button
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
                 type="button"
                 onClick={onLogout}
                 title="Disconnetti Spotify"
-                className="p-1.5 sm:p-2 rounded-xl text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 border border-transparent hover:border-rose-900/40 transition-all duration-200 cursor-pointer"
+                className="p-1.5 sm:p-2 rounded-xl text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 border border-transparent hover:border-rose-900/40 transition-colors cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
-              </button>
+              </motion.button>
             </div>
           ) : (
-            <button
+            <motion.button
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              transition={{ type: "spring", stiffness: 400, damping: 20 }}
               type="button"
               onClick={onLoginSpotify}
-              className="flex items-center gap-1.5 py-1.5 px-3 rounded-full bg-[#1DB954]/10 hover:bg-[#1DB954]/20 border border-[#1DB954]/30 text-[#1DB954] text-xs font-semibold transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer shadow-sm"
+              className="flex items-center gap-1.5 py-1.5 px-3 rounded-full bg-[#1DB954]/10 hover:bg-[#1DB954]/20 border border-[#1DB954]/30 text-[#1DB954] text-xs font-semibold transition-colors cursor-pointer shadow-sm"
             >
               <span className="w-2 h-2 rounded-full bg-[#1DB954] animate-pulse" />
               <span>Accedi a Spotify</span>
-            </button>
+            </motion.button>
           )}
         </div>
       </div>

@@ -9,6 +9,7 @@ import {
   Trash2,
   ClipboardPaste,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface ImageUploaderProps {
   onAnalyzeImage: (fileOrBase64: File | string, mimeType?: string) => Promise<void>;
@@ -125,137 +126,166 @@ export function ImageUploader({
         className="hidden"
       />
 
-      {!previewUrl ? (
-        <div
-          onDragEnter={handleDrag}
-          onDragOver={handleDrag}
-          onDragLeave={handleDrag}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`relative border-2 border-dashed rounded-3xl p-6 sm:p-12 text-center cursor-pointer transition-all duration-300 ease-out ${
-            dragActive
-              ? "border-[#1DB954] bg-[#1DB954]/10 scale-[1.01] shadow-2xl shadow-[#1DB954]/20"
-              : "border-neutral-800 hover:border-neutral-700 bg-neutral-900/40 hover:bg-neutral-900/70 hover:shadow-xl"
-          } backdrop-blur`}
-        >
-          {/* Background Glow */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#1DB954]/5 via-transparent to-transparent rounded-3xl pointer-events-none" />
+      <AnimatePresence mode="wait">
+        {!previewUrl ? (
+          <motion.div
+            key="dropzone"
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.25 }}
+            onDragEnter={handleDrag}
+            onDragOver={handleDrag}
+            onDragLeave={handleDrag}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.99 }}
+            className={`relative border-2 border-dashed rounded-3xl p-6 sm:p-12 text-center cursor-pointer transition-colors duration-200 ${
+              dragActive
+                ? "border-[#1DB954] bg-[#1DB954]/10 shadow-2xl shadow-[#1DB954]/20"
+                : "border-neutral-800 hover:border-neutral-700 bg-neutral-900/40 hover:bg-neutral-900/70 shadow-xl"
+            } backdrop-blur`}
+          >
+            {/* Background Glow */}
+            <div className="absolute inset-0 bg-gradient-to-b from-[#1DB954]/5 via-transparent to-transparent rounded-3xl pointer-events-none" />
 
-          <div className="flex flex-col items-center justify-center gap-4 relative z-10">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 group-hover:text-white shadow-lg transition-transform duration-300 hover:scale-105">
-              <UploadCloud className="w-8 h-8 sm:w-10 sm:h-10 text-[#1DB954]" />
-            </div>
+            <div className="flex flex-col items-center justify-center gap-4 relative z-10">
+              <motion.div
+                whileHover={{ rotate: 5, scale: 1.05 }}
+                transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 group-hover:text-white shadow-lg"
+              >
+                <UploadCloud className="w-8 h-8 sm:w-10 sm:h-10 text-[#1DB954]" />
+              </motion.div>
 
-            <div className="space-y-1.5 px-2">
-              <h3 className="text-base sm:text-xl font-bold text-white tracking-tight">
-                Carica o trascina qui il tuo screenshot
-              </h3>
-              <p className="text-xs sm:text-sm text-neutral-400 max-w-md mx-auto leading-relaxed">
-                Tocca per selezionare una foto dalla galleria oppure premi{" "}
-                <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 font-mono text-[10px] sm:text-[11px] text-neutral-200">
-                  Ctrl + V
-                </kbd>{" "}
-                per incollare direttamente.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-[11px] text-neutral-400">
-              <span className="flex items-center gap-1 bg-neutral-900/80 px-2.5 py-1 rounded-full border border-neutral-800">
-                <ImageIcon className="w-3 h-3 text-[#1DB954]" /> PNG, JPG, WebP, HEIC
-              </span>
-              <span className="flex items-center gap-1 bg-neutral-900/80 px-2.5 py-1 rounded-full border border-neutral-800">
-                <ClipboardPaste className="w-3 h-3 text-cyan-400" /> Incolla da appunti
-              </span>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Preview State */
-        <div className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-4 sm:p-6 shadow-2xl backdrop-blur transition-all duration-300">
-          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
-            {/* Thumbnail */}
-            <div className="relative group w-full sm:w-44 h-48 sm:h-44 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800 flex-shrink-0 flex items-center justify-center">
-              <img
-                src={previewUrl}
-                alt="Anteprima screenshot"
-                className="w-full h-full object-contain"
-              />
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-medium transition-all duration-200 cursor-pointer"
-                  title="Cambia immagine"
-                >
-                  Cambia
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="p-2 rounded-xl bg-rose-950 hover:bg-rose-900 text-rose-300 transition-all duration-200 cursor-pointer"
-                  title="Rimuovi"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Info & Action */}
-            <div className="flex-1 text-center sm:text-left space-y-3 w-full">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-[#1DB954] uppercase tracking-wider">
-                    Screenshot Selezionato
-                  </span>
-                  {fileDetails && (
-                    <span className="text-xs text-neutral-500 font-mono">
-                      {fileDetails.size}
-                    </span>
-                  )}
-                </div>
-                <h4 className="text-sm sm:text-base font-bold text-white truncate max-w-sm">
-                  {fileDetails?.name || "Screenshot musicale"}
-                </h4>
-                <p className="text-xs text-neutral-400 mt-1">
-                  Gemini AI analizzerà lo screenshot per estrarre tutti i brani e proporre un titolo per la playlist.
+              <div className="space-y-1.5 px-2">
+                <h3 className="text-base sm:text-xl font-bold text-white tracking-tight">
+                  Carica o trascina qui il tuo screenshot
+                </h3>
+                <p className="text-xs sm:text-sm text-neutral-400 max-w-md mx-auto leading-relaxed">
+                  Tocca per selezionare una foto dalla galleria oppure premi{" "}
+                  <kbd className="px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 font-mono text-[10px] sm:text-[11px] text-neutral-200">
+                    Ctrl + V
+                  </kbd>{" "}
+                  per incollare direttamente.
                 </p>
               </div>
 
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2">
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={handleAnalyze}
-                  className="flex-1 py-3 px-5 rounded-2xl bg-gradient-to-r from-[#1DB954] via-emerald-500 to-cyan-500 hover:from-[#1ed760] hover:to-cyan-400 text-neutral-950 font-bold text-sm transition-all duration-300 shadow-lg shadow-[#1DB954]/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Analisi Gemini in corso...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4 text-neutral-950" />
-                      <span>Estrai Canzoni con Gemini</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={handleClear}
-                  className="py-3 px-4 rounded-2xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-400 hover:text-rose-400 border border-neutral-700/50 transition-all duration-200 cursor-pointer flex items-center justify-center gap-1.5 text-xs font-semibold"
-                  title="Cancella"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span className="sm:hidden">Rimuovi</span>
-                </button>
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-[11px] text-neutral-400">
+                <span className="flex items-center gap-1 bg-neutral-900/80 px-2.5 py-1 rounded-full border border-neutral-800">
+                  <ImageIcon className="w-3 h-3 text-[#1DB954]" /> PNG, JPG, WebP, HEIC
+                </span>
+                <span className="flex items-center gap-1 bg-neutral-900/80 px-2.5 py-1 rounded-full border border-neutral-800">
+                  <ClipboardPaste className="w-3 h-3 text-cyan-400" /> Incolla da appunti
+                </span>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        ) : (
+          /* Preview State */
+          <motion.div
+            key="preview"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ type: "spring", stiffness: 350, damping: 25 }}
+            className="bg-neutral-900/90 border border-neutral-800 rounded-3xl p-4 sm:p-6 shadow-2xl backdrop-blur"
+          >
+            <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+              {/* Thumbnail */}
+              <div className="relative group w-full sm:w-44 h-48 sm:h-44 rounded-2xl overflow-hidden bg-neutral-950 border border-neutral-800 flex-shrink-0 flex items-center justify-center">
+                <img
+                  src={previewUrl}
+                  alt="Anteprima screenshot"
+                  className="w-full h-full object-contain"
+                />
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-2 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-medium transition-colors cursor-pointer"
+                    title="Cambia immagine"
+                  >
+                    Cambia
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    onClick={handleClear}
+                    className="p-2 rounded-xl bg-rose-950 hover:bg-rose-900 text-rose-300 transition-colors cursor-pointer"
+                    title="Rimuovi"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </motion.button>
+                </div>
+              </div>
+
+              {/* Info & Action */}
+              <div className="flex-1 text-center sm:text-left space-y-3 w-full">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#1DB954] uppercase tracking-wider">
+                      Screenshot Selezionato
+                    </span>
+                    {fileDetails && (
+                      <span className="text-xs text-neutral-500 font-mono">
+                        {fileDetails.size}
+                      </span>
+                    )}
+                  </div>
+                  <h4 className="text-sm sm:text-base font-bold text-white truncate max-w-sm">
+                    {fileDetails?.name || "Screenshot musicale"}
+                  </h4>
+                  <p className="text-xs text-neutral-400 mt-1">
+                    Gemini AI analizzerà lo screenshot per estrarre tutti i brani e proporre un titolo per la playlist.
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-2">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                    type="button"
+                    disabled={isLoading}
+                    onClick={handleAnalyze}
+                    className="flex-1 py-3 px-5 rounded-2xl bg-gradient-to-r from-[#1DB954] via-emerald-500 to-cyan-500 hover:from-[#1ed760] hover:to-cyan-400 text-neutral-950 font-bold text-sm shadow-lg shadow-[#1DB954]/25 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Analisi Gemini in corso...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 text-neutral-950" />
+                        <span>Estrai Canzoni con Gemini</span>
+                      </>
+                    )}
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    type="button"
+                    disabled={isLoading}
+                    onClick={handleClear}
+                    className="py-3 px-4 rounded-2xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-400 hover:text-rose-400 border border-neutral-700/50 transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-xs font-semibold"
+                    title="Cancella"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span className="sm:hidden">Rimuovi</span>
+                  </motion.button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

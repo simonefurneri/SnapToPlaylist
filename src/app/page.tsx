@@ -31,6 +31,7 @@ import {
   ShieldCheck,
   Zap,
 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 function MainAppContent() {
   const router = useRouter();
@@ -164,7 +165,7 @@ function MainAppContent() {
       );
       setSongs(formattedSongs);
       setSuccessMessage(
-        `Estratte con successo ${formattedSongs.length} canzoni da Gemini!`
+        `Estratte con successo ${formattedSongs.length} canzoni con Gemini Vision!`
       );
       setTimeout(() => setSuccessMessage(null), 3500);
     } catch (err: unknown) {
@@ -177,7 +178,7 @@ function MainAppContent() {
     }
   };
 
-  // 4. Update, Delete, Add song (resets status to 'pending' to require re-verification)
+  // 4. Update, Delete, Add song
   const handleUpdateSong = (id: string, updated: Partial<ExtractedSong>) => {
     setSongs((prev) =>
       prev.map((s) =>
@@ -386,114 +387,159 @@ function MainAppContent() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-6 sm:py-10 space-y-6">
-        {/* Alerts */}
-        {errorMessage && (
-          <div className="bg-rose-950/70 border border-rose-800/80 rounded-2xl p-4 flex items-start gap-3 text-rose-200 shadow-xl animate-in fade-in duration-300">
-            <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
-            <p className="flex-1 text-xs sm:text-sm font-medium">{errorMessage}</p>
-            <button
-              type="button"
-              onClick={() => setErrorMessage(null)}
-              className="text-xs text-rose-400 hover:text-white p-1 cursor-pointer"
+        {/* Animated Alerts */}
+        <AnimatePresence>
+          {errorMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+              className="bg-rose-950/70 border border-rose-800/80 rounded-2xl p-4 flex items-start gap-3 text-rose-200 shadow-xl"
             >
-              ✕
-            </button>
-          </div>
-        )}
+              <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+              <p className="flex-1 text-xs sm:text-sm font-medium">{errorMessage}</p>
+              <motion.button
+                whileHover={{ scale: 1.15 }}
+                whileTap={{ scale: 0.9 }}
+                type="button"
+                onClick={() => setErrorMessage(null)}
+                className="text-xs text-rose-400 hover:text-white p-1 cursor-pointer"
+              >
+                ✕
+              </motion.button>
+            </motion.div>
+          )}
 
-        {successMessage && (
-          <div className="bg-emerald-950/70 border border-emerald-800/80 rounded-2xl p-4 flex items-center gap-3 text-emerald-200 shadow-xl animate-in fade-in duration-300">
-            <CheckCircle2 className="w-5 h-5 text-[#1DB954] flex-shrink-0" />
-            <p className="flex-1 text-xs sm:text-sm font-medium">{successMessage}</p>
-            <button
-              type="button"
-              onClick={() => setSuccessMessage(null)}
-              className="text-xs text-emerald-400 hover:text-white p-1 cursor-pointer"
+          {successMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: -10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+              className="bg-emerald-950/70 border border-emerald-800/80 rounded-2xl p-4 flex items-center gap-3 text-emerald-200 shadow-xl"
             >
-              ✕
-            </button>
-          </div>
-        )}
+              <CheckCircle2 className="w-5 h-5 text-[#1DB954] flex-shrink-0" />
+              <p className="flex-1 text-xs sm:text-sm font-medium">{successMessage}</p>
+              <motion.button
+                whileHover={{ scale: 1.15 }}
+                whileTap={{ scale: 0.9 }}
+                type="button"
+                onClick={() => setSuccessMessage(null)}
+                className="text-xs text-emerald-400 hover:text-white p-1 cursor-pointer"
+              >
+                ✕
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* View 1: Upload Hero View */}
-        {songs.length === 0 ? (
-          <div className="space-y-8 sm:space-y-12">
-            {/* Hero */}
-            <div className="text-center max-w-2xl mx-auto space-y-3 pt-2 sm:pt-4 px-2">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900/90 border border-neutral-800 text-[11px] font-semibold text-neutral-300 shadow-lg">
-                <Sparkles className="w-3.5 h-3.5 text-[#1DB954]" />
-                <span>Gemini Vision AI + Spotify API</span>
+        {/* View Transition: Upload View vs Song List View */}
+        <AnimatePresence mode="wait">
+          {songs.length === 0 ? (
+            <motion.div
+              key="hero-view"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="space-y-8 sm:space-y-12"
+            >
+              {/* Hero */}
+              <div className="text-center max-w-2xl mx-auto space-y-3 pt-2 sm:pt-4 px-2">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3, delay: 0.05 }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-neutral-900/90 border border-neutral-800 text-[11px] font-semibold text-neutral-300 shadow-lg"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#1DB954]" />
+                  <span>Gemini Vision AI + Spotify API</span>
+                </motion.div>
+
+                <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-tight">
+                  Da Screenshot a{" "}
+                  <span className="bg-gradient-to-r from-[#1DB954] via-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                    Playlist Spotify
+                  </span>
+                </h1>
+
+                <p className="text-xs sm:text-sm text-neutral-400 max-w-lg mx-auto leading-relaxed">
+                  Carica uno screenshot con brani musicali. Gemini riconosce i titoli, potrai verificarli singolarmente su Spotify e creare la playlist con un click.
+                </p>
               </div>
 
-              <h1 className="text-2xl sm:text-4xl md:text-5xl font-black tracking-tight text-white leading-tight">
-                Da Screenshot a{" "}
-                <span className="bg-gradient-to-r from-[#1DB954] via-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-                  Playlist Spotify
-                </span>
-              </h1>
+              {/* Uploader */}
+              <ImageUploader
+                onAnalyzeImage={handleAnalyzeImage}
+                isLoading={isExtracting}
+              />
 
-              <p className="text-xs sm:text-sm text-neutral-400 max-w-lg mx-auto leading-relaxed">
-                Carica uno screenshot con brani musicali. Gemini riconosce i titoli, potrai verificarli singolarmente su Spotify e creare la playlist con un click.
-              </p>
-            </div>
+              {/* Feature Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-4 border-t border-neutral-850">
+                <motion.div
+                  whileHover={{ y: -3 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                  className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 space-y-1.5"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+                    <Zap className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-xs sm:text-sm text-white">OCR Gemini Vision</h3>
+                  <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
+                    Riconosce testo e brani da immagini a qualsiasi risoluzione e genera il nome della playlist.
+                  </p>
+                </motion.div>
 
-            {/* Uploader */}
-            <ImageUploader
-              onAnalyzeImage={handleAnalyzeImage}
-              isLoading={isExtracting}
+                <motion.div
+                  whileHover={{ y: -3 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                  className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 space-y-1.5"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-[#1DB954]/10 border border-[#1DB954]/20 flex items-center justify-center text-[#1DB954]">
+                    <Music className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-xs sm:text-sm text-white">Verifica Accurata</h3>
+                  <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
+                    Verifica in tempo reale su Spotify senza falsi positivi per brani o artisti inesistenti.
+                  </p>
+                </motion.div>
+
+                <motion.div
+                  whileHover={{ y: -3 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                  className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 space-y-1.5"
+                >
+                  <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-xs sm:text-sm text-white">OAuth PKCE Sicuro</h3>
+                  <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
+                    Autenticazione diretta e sicura con Spotify senza trasmissione di credenziali sensibili.
+                  </p>
+                </motion.div>
+              </div>
+            </motion.div>
+          ) : (
+            /* View 2: Song List & Separated Check / Create Flow */
+            <SongList
+              key="songlist-view"
+              songs={songs}
+              playlistName={playlistName}
+              onPlaylistNameChange={setPlaylistName}
+              onUpdateSong={handleUpdateSong}
+              onDeleteSong={handleDeleteSong}
+              onAddSong={handleAddSong}
+              onVerifyTracks={handleVerifySpotifyTracks}
+              onRequestCreatePlaylist={handleRequestCreatePlaylist}
+              isVerifying={isVerifying}
+              isCreating={isCreating}
+              activeCheckingSongId={activeCheckingSongId}
+              statusStepText={statusStepText}
+              onReset={handleResetToHome}
             />
-
-            {/* Feature Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-4 border-t border-neutral-850">
-              <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 space-y-1.5">
-                <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-                  <Zap className="w-4 h-4" />
-                </div>
-                <h3 className="font-bold text-xs sm:text-sm text-white">OCR Gemini Vision</h3>
-                <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
-                  Riconosce testo e brani da immagini a qualsiasi risoluzione e genera il nome della playlist.
-                </p>
-              </div>
-
-              <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 space-y-1.5">
-                <div className="w-8 h-8 rounded-xl bg-[#1DB954]/10 border border-[#1DB954]/20 flex items-center justify-center text-[#1DB954]">
-                  <Music className="w-4 h-4" />
-                </div>
-                <h3 className="font-bold text-xs sm:text-sm text-white">Verifica Accurata</h3>
-                <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
-                  Verifica in tempo reale su Spotify senza falsi positivi per brani o artisti inesistenti.
-                </p>
-              </div>
-
-              <div className="bg-neutral-900/40 border border-neutral-800/80 rounded-2xl p-4 sm:p-5 space-y-1.5">
-                <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-                  <ShieldCheck className="w-4 h-4" />
-                </div>
-                <h3 className="font-bold text-xs sm:text-sm text-white">OAuth PKCE Sicuro</h3>
-                <p className="text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
-                  Autenticazione diretta e sicura con Spotify senza trasmissione di credenziali sensibili.
-                </p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* View 2: Song List & Separated Check / Create Flow */
-          <SongList
-            songs={songs}
-            playlistName={playlistName}
-            onPlaylistNameChange={setPlaylistName}
-            onUpdateSong={handleUpdateSong}
-            onDeleteSong={handleDeleteSong}
-            onAddSong={handleAddSong}
-            onVerifyTracks={handleVerifySpotifyTracks}
-            onRequestCreatePlaylist={handleRequestCreatePlaylist}
-            isVerifying={isVerifying}
-            isCreating={isCreating}
-            activeCheckingSongId={activeCheckingSongId}
-            statusStepText={statusStepText}
-            onReset={handleResetToHome}
-          />
-        )}
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Footer */}

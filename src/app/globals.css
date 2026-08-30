@@ -2,12 +2,14 @@
 
 @layer base {
   :root {
-    --background: #090a0f;
-    --foreground: #f1f5f9;
+    --background: #08090d;
+    --foreground: #f8fafc;
   }
 
   html {
     scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   button,
@@ -19,6 +21,14 @@
   [role="button"],
   .cursor-interactive {
     cursor: pointer;
+    user-select: none;
+  }
+
+  /* GPU accelerated rendering for silky animations */
+  .gpu-accelerated {
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    perspective: 1000px;
   }
 }
 
@@ -29,49 +39,59 @@ body {
   overflow-x: hidden;
 }
 
-/* Smooth custom scrollbar */
+/* Custom smooth scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #090a0f;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #1e293b;
   border-radius: 9999px;
+  transition: background-color 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #334155;
 }
 
-@keyframes progress {
-  0% {
-    width: 0%;
-    margin-left: 0%;
+/* Modern Glowing Gradients */
+@keyframes ambientFloat {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
   }
   50% {
-    width: 70%;
-    margin-left: 15%;
+    transform: translate(15px, -15px) scale(1.05);
+  }
+}
+
+.animate-ambient {
+  animation: ambientFloat 8s ease-in-out infinite;
+}
+
+/* Subtle Shimmer for Primary CTAs */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
   }
   100% {
-    width: 100%;
-    margin-left: 100%;
+    background-position: 200% 0;
   }
 }
 
-@keyframes pulseGlow {
-  0%, 100% {
-    box-shadow: 0 0 15px rgba(29, 185, 84, 0.2), 0 0 30px rgba(56, 189, 248, 0.1);
-  }
-  50% {
-    box-shadow: 0 0 25px rgba(29, 185, 84, 0.4), 0 0 45px rgba(56, 189, 248, 0.2);
-  }
-}
-
-.animate-pulse-glow {
-  animation: pulseGlow 3s ease-in-out infinite;
+.shimmer-btn {
+  background-size: 200% 100%;
+  background-image: linear-gradient(
+    90deg,
+    #1db954 0%,
+    #22c55e 35%,
+    #86efac 50%,
+    #22c55e 65%,
+    #1db954 100%
+  );
+  animation: shimmer 4s infinite linear;
 }
