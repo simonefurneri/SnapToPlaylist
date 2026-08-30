@@ -519,8 +519,6 @@ function MainAppContent() {
         error?.message?.includes("403")
       ) {
         setIsConfirmModalOpen(false);
-        logoutSpotify();
-        setUserProfile(null);
         setErrorMessage(
           error.message ||
             "Accesso negato da Spotify (403 Forbidden): il tuo account Spotify non è autorizzato."

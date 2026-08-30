@@ -798,86 +798,41 @@ export async function createPlaylistAndAddTracks(
     throw new Error("Impossibile recuperare il profilo utente Spotify.");
   }
 
-  // 1. Create playlist under /v1/users/{user_id}/playlists
-  let playlistId = "";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let playlistData: any = null;
+  // 1. Create playlist using current Spotify Web API endpoint: POST /v1/me/playlists
+  const createRes = await fetch(`${SPOTIFY_API_BASE}/me/playlists`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: playlistName || "La mia Playlist Snap",
+      description,
+      public: false,
+    }),
+  });
 
-  // Try creating as private first, then public if needed
-  const createPayloads = [
-    { name: playlistName || "La mia Playlist Snap", description, public: false },
-    { name: playlistName || "La mia Playlist Snap", description, public: true },
-  ];
-
-  let lastCreateError: Error | null = null;
-  for (const payload of createPayloads) {
-    try {
-      const createRes = await fetch(
-        `${SPOTIFY_API_BASE}/users/${encodeURIComponent(profile.id)}/playlists`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      if (createRes.ok) {
-        playlistData = await createRes.json();
-        playlistId = playlistData.id;
-        break;
-      } else {
-        if (createRes.status === 403) {
-          logoutSpotify();
-          throw new SpotifyForbiddenError(
-            "Accesso negato da Spotify (403 Forbidden): il tuo account Spotify non è autorizzato nella Developer Dashboard (Modalità Sviluppo) o non ha i permessi per creare playlist."
-          );
-        }
-        const errJson = await createRes.json().catch(() => ({}));
-        lastCreateError = new Error(
-          errJson.error?.message || `Status ${createRes.status}`
-        );
-      }
-    } catch (err: unknown) {
-      if (err instanceof SpotifyForbiddenError) throw err;
-      lastCreateError = err as Error;
+  if (!createRes.ok) {
+    if (createRes.status === 401) {
+      logoutSpotify();
+      throw new Error("Sessione Spotify scaduta. Effettua nuovamente l'accesso.");
     }
-  }
-
-  // Fallback to /me/playlists if /users/{id}/playlists was rejected
-  if (!playlistId) {
-    const res = await fetch(`${SPOTIFY_API_BASE}/me/playlists`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        name: playlistName || "La mia Playlist Snap",
-        description,
-        public: false,
-      }),
-    });
-    if (res.ok) {
-      playlistData = await res.json();
-      playlistId = playlistData.id;
-    } else {
-      if (res.status === 403) {
-        logoutSpotify();
-        throw new SpotifyForbiddenError(
-          "Accesso negato da Spotify (403 Forbidden): il tuo account Spotify non è autorizzato nella Developer Dashboard (Modalità Sviluppo)."
-        );
-      }
-      const err = await res.json().catch(() => ({}));
-      throw new Error(
-        err.error?.message ||
-          lastCreateError?.message ||
-          `Impossibile creare la playlist su Spotify.`
+    if (createRes.status === 403) {
+      const errJson = await createRes.json().catch(() => ({}));
+      const detail = errJson.error?.message ? ` (${errJson.error.message})` : "";
+      throw new SpotifyForbiddenError(
+        `Accesso negato da Spotify (403 Forbidden)${detail}: controlla che il tuo account sia autorizzato nella Developer Dashboard di Spotify.`
       );
     }
+    const errJson = await createRes.json().catch(() => ({}));
+    throw new Error(
+      errJson.error?.message ||
+        `Impossibile creare la playlist su Spotify (Status: ${createRes.status}).`
+    );
   }
+
+  const playlistData = await createRes.json();
+  const playlistId = playlistData.id;
 
   // 2. Filter URIs of found songs
   const urisToAdd = songs
@@ -885,14 +840,14 @@ export async function createPlaylistAndAddTracks(
     .map((s) => s.spotifyUri as string)
     .filter((u) => u.startsWith("spotify:track:"));
 
-  // 3. Add tracks in batches of max 100
+  // 3. Add tracks in batches of max 100 to /v1/playlists/{playlist_id}/items
   let addedCount = 0;
   if (urisToAdd.length > 0) {
     const chunkSize = 100;
     for (let i = 0; i < urisToAdd.length; i += chunkSize) {
       const chunk = urisToAdd.slice(i, i + chunkSize);
 
-      // Attempt 1: Modern endpoint POST /v1/playlists/{id}/items with JSON body
+      // Attempt 1: Standard endpoint POST /v1/playlists/{id}/items with JSON body
       let addRes = await fetch(
         `${SPOTIFY_API_BASE}/playlists/${playlistId}/items`,
         {
@@ -907,7 +862,7 @@ export async function createPlaylistAndAddTracks(
         }
       );
 
-      // Attempt 2: Legacy endpoint POST /v1/playlists/{id}/tracks with JSON body
+      // Attempt 2: Legacy fallback POST /v1/playlists/{id}/tracks
       if (!addRes.ok) {
         console.warn(
           `Tentativo /items fallito (${addRes.status}), provo con /tracks...`
@@ -947,10 +902,13 @@ export async function createPlaylistAndAddTracks(
       if (!addRes.ok) {
         const errorText = await addRes.text();
         console.error("Errore nell'aggiunta tracce:", errorText);
-        if (addRes.status === 403) {
+        if (addRes.status === 401) {
           logoutSpotify();
+          throw new Error("Sessione Spotify scaduta. Effettua nuovamente l'accesso.");
+        }
+        if (addRes.status === 403) {
           throw new SpotifyForbiddenError(
-            "Accesso negato da Spotify (403 Forbidden): account non autorizzato in 'User Management' nella dashboard sviluppatore di Spotify o permessi mancanti."
+            "Accesso negato da Spotify (403 Forbidden): account non autorizzato o permessi mancanti per aggiungere brani."
           );
         }
       } else {
