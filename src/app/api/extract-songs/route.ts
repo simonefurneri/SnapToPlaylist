@@ -1,11 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractSongsFromImage } from "@/lib/gemini";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // Allow sufficient time for vision processing
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. Password Protection Check if APP_PASSWORD is set
+    const expectedPassword = process.env.APP_PASSWORD || process.env.ACCESS_PASSWORD;
+    if (expectedPassword && expectedPassword.trim() !== "") {
+      const cookieToken = request.cookies.get("stp_access_token")?.value;
+      const expectedToken = crypto
+        .createHash("sha256")
+        .update(`snap-auth-${expectedPassword.trim()}`)
+        .digest("hex");
+
+      if (cookieToken !== expectedToken) {
+        return NextResponse.json(
+          { error: "Accesso non autorizzato. Inserisci la password per utilizzare l'app." },
+          { status: 401 }
+        );
+      }
+    }
+
     const contentType = request.headers.get("content-type") || "";
 
     let base64Data = "";

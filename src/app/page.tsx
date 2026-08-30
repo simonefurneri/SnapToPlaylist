@@ -21,6 +21,7 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { ImageUploader } from "@/components/ImageUploader";
 import { SongList } from "@/components/SongList";
+import { AccessGate } from "@/components/AccessGate";
 import { CreatePlaylistConfirmModal } from "@/components/CreatePlaylistConfirmModal";
 import { PlaylistCreatedModal } from "@/components/PlaylistCreatedModal";
 import {
@@ -30,12 +31,17 @@ import {
   Music,
   ShieldCheck,
   Zap,
+  Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 function MainAppContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  // Access Gate Protection State
+  const [isAccessChecking, setIsAccessChecking] = useState(true);
+  const [isAccessGranted, setIsAccessGranted] = useState(true);
 
   // App State
   const [songs, setSongs] = useState<ExtractedSong[]>([]);
@@ -58,7 +64,24 @@ function MainAppContent() {
   const [createdPlaylistResult, setCreatedPlaylistResult] =
     useState<CreatedPlaylistResult | null>(null);
 
-  // 1. Check existing Spotify session
+  // 1. Verify App Password Protection on load
+  const checkAccess = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/check");
+      if (res.ok) {
+        const data = await res.json();
+        setIsAccessGranted(!data.isProtected || data.isAuthorized);
+      } else {
+        setIsAccessGranted(true);
+      }
+    } catch {
+      setIsAccessGranted(true);
+    } finally {
+      setIsAccessChecking(false);
+    }
+  }, []);
+
+  // 2. Check existing Spotify session
   const loadProfile = useCallback(async () => {
     const token = getStoredAccessToken();
     if (token) {
@@ -74,8 +97,9 @@ function MainAppContent() {
     }
   }, []);
 
-  // 2. Handle OAuth return
+  // 3. Initial Mount
   useEffect(() => {
+    checkAccess();
     loadProfile();
 
     const queryError = searchParams.get("error");
@@ -101,9 +125,9 @@ function MainAppContent() {
       }
       router.replace("/");
     }
-  }, [searchParams, router, loadProfile]);
+  }, [searchParams, router, loadProfile, checkAccess]);
 
-  // 3. Gemini Vision Extraction
+  // 4. Gemini Vision Extraction
   const handleAnalyzeImage = async (
     fileOrBase64: File | string,
     mimeType: string = "image/jpeg"
@@ -178,7 +202,7 @@ function MainAppContent() {
     }
   };
 
-  // 4. Update, Delete, Add song
+  // 5. Update, Delete, Add song
   const handleUpdateSong = (id: string, updated: Partial<ExtractedSong>) => {
     setSongs((prev) =>
       prev.map((s) =>
@@ -213,7 +237,7 @@ function MainAppContent() {
     setSongs((prev) => [...prev, newSong]);
   };
 
-  // 5. Step 1: Verify Spotify Matches Only
+  // 6. Step 1: Verify Spotify Matches
   const handleVerifySpotifyTracks = async () => {
     if (songs.length === 0) return;
 
@@ -296,7 +320,7 @@ function MainAppContent() {
     }
   };
 
-  // 6. Step 2: Open Confirmation Modal
+  // 7. Step 2: Open Confirmation Modal
   const handleRequestCreatePlaylist = () => {
     const hasUnchecked = songs.some((s) => s.status === "pending" || !s.status);
     if (hasUnchecked) {
@@ -315,7 +339,7 @@ function MainAppContent() {
     setIsConfirmModalOpen(true);
   };
 
-  // 7. Step 3: Execute Playlist Creation on Spotify
+  // 8. Step 3: Execute Playlist Creation on Spotify
   const handleExecuteCreateSpotifyPlaylist = async () => {
     let token = getStoredAccessToken();
 
@@ -374,6 +398,20 @@ function MainAppContent() {
     setStatusStepText("");
     setIsConfirmModalOpen(false);
   };
+
+  // Show loading spinner while checking access
+  if (isAccessChecking) {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#1DB954]" />
+      </div>
+    );
+  }
+
+  // Show Lock Gate if access is not granted
+  if (!isAccessGranted) {
+    return <AccessGate onUnlock={() => setIsAccessGranted(true)} />;
+  }
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col selection:bg-[#1DB954]/30 selection:text-white">
