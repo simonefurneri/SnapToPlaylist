@@ -1,52 +1,26 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
   X,
   AlertTriangle,
-  Clock,
   RefreshCw,
-  Hourglass,
   Info,
+  ShieldAlert,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface SpotifyRateLimitModalProps {
   isOpen: boolean;
-  retryAfter?: number | null;
   onClose: () => void;
   onRetry?: () => void;
 }
 
 export function SpotifyRateLimitModal({
   isOpen,
-  retryAfter,
   onClose,
   onRetry,
 }: SpotifyRateLimitModalProps) {
-  const [countdown, setCountdown] = useState<number | null>(
-    typeof retryAfter === "number" && retryAfter > 0 ? retryAfter : null
-  );
-
-  useEffect(() => {
-    if (!isOpen || typeof retryAfter !== "number" || retryAfter <= 0) {
-      return;
-    }
-
-    const endTime = Date.now() + retryAfter * 1000;
-    const timer = setInterval(() => {
-      const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
-      setCountdown(remaining);
-      if (remaining <= 0) {
-        clearInterval(timer);
-      }
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isOpen, retryAfter]);
-
-  const hasCountdown = typeof countdown === "number" && countdown > 0;
-
   return (
     <AnimatePresence>
       {isOpen && (
@@ -96,7 +70,7 @@ export function SpotifyRateLimitModal({
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
                 className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shadow-lg shadow-amber-500/20 flex-shrink-0"
               >
-                <Hourglass className="w-6 h-6 animate-pulse" />
+                <ShieldAlert className="w-6 h-6 text-amber-400" />
               </motion.div>
               <div>
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-[10px] font-bold text-amber-300 uppercase tracking-wider mb-1">
@@ -109,44 +83,25 @@ export function SpotifyRateLimitModal({
             </div>
 
             {/* Explanation & Context */}
-            <div className="space-y-3 mb-5 text-xs sm:text-sm text-neutral-300">
+            <div className="space-y-3.5 mb-6 text-xs sm:text-sm text-neutral-300">
               <p className="leading-relaxed text-neutral-300">
                 L&apos;API di ricerca di <strong className="text-white">Spotify</strong> ha temporaneamente limitato le richieste per prevenire un carico eccessivo (Rate Limit).
               </p>
               
-              <div className="bg-amber-950/40 border border-amber-900/60 rounded-2xl p-3.5 text-xs text-amber-200/90 flex items-start gap-2.5">
+              <div className="bg-amber-950/40 border border-amber-900/60 rounded-2xl p-4 text-xs text-amber-200/90 flex items-start gap-3">
                 <Info className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                <div className="space-y-1 leading-relaxed">
-                  <p className="font-semibold text-amber-300">
-                    Ricerca successiva bloccata automaticamente
+                <div className="space-y-1.5 leading-relaxed">
+                  <p className="font-bold text-amber-300">
+                    Ricerca successiva interrotta automaticamente
                   </p>
                   <p className="text-neutral-300 text-[11px] sm:text-xs">
-                    Per evitare ulteriori blocchi da parte di Spotify, la verifica delle canzoni successive è stata interrotta. I brani già verificati restano salvati.
+                    Per evitare ulteriori blocchi da parte di Spotify, la verifica delle canzoni successive è stata sospesa. I brani già verificati in precedenza sono rimasti salvati.
+                  </p>
+                  <p className="text-neutral-400 text-[11px] pt-1">
+                    Ti consigliamo di attendere qualche istante prima di riprovare la verifica.
                   </p>
                 </div>
               </div>
-
-              {/* Countdown / Wait Time Banner */}
-              {typeof retryAfter === "number" && retryAfter > 0 && (
-                <div className="bg-neutral-950/80 border border-neutral-800 rounded-2xl p-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <Clock className="w-5 h-5 text-amber-400" />
-                    <div>
-                      <div className="text-[11px] text-neutral-400 font-medium">
-                        Tempo di attesa consigliato
-                      </div>
-                      <div className="text-xs text-neutral-300 font-semibold">
-                        {hasCountdown ? "Attendi prima di riprovare" : "Tempo trascorso! Puoi riprovare ora."}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-xl sm:text-2xl font-mono font-black text-amber-400">
-                      {countdown ?? 0}s
-                    </span>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Action Buttons */}
@@ -168,19 +123,14 @@ export function SpotifyRateLimitModal({
                   whileTap={{ scale: 0.98 }}
                   transition={{ type: "spring", stiffness: 400, damping: 20 }}
                   type="button"
-                  disabled={hasCountdown}
                   onClick={() => {
                     onClose();
                     onRetry();
                   }}
-                  className="order-1 sm:order-2 flex-1 py-3 px-5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-neutral-950 font-extrabold text-xs sm:text-sm shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="order-1 sm:order-2 flex-1 py-3 px-5 rounded-xl bg-gradient-to-r from-emerald-500 to-[#1DB954] hover:from-emerald-400 hover:to-[#1ed760] text-neutral-950 font-extrabold text-xs sm:text-sm shadow-xl shadow-emerald-500/25 flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <RefreshCw className="w-4 h-4 text-neutral-950" />
-                  <span>
-                    {hasCountdown
-                      ? `Riprova tra ${countdown}s`
-                      : "Riprova Verifica"}
-                  </span>
+                  <span>Riprova Verifica</span>
                 </motion.button>
               )}
             </div>

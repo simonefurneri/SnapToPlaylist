@@ -10,12 +10,9 @@ const SPOTIFY_TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
 const SPOTIFY_API_BASE = "https://api.spotify.com/v1";
 
 export class SpotifyRateLimitError extends Error {
-  retryAfter?: number;
-
-  constructor(message: string = "Limite di richieste Spotify raggiunto (429 Too Many Requests).", retryAfter?: number) {
+  constructor(message: string = "Limite di richieste Spotify raggiunto (429 Too Many Requests).") {
     super(message);
     this.name = "SpotifyRateLimitError";
-    this.retryAfter = retryAfter;
     Object.setPrototypeOf(this, SpotifyRateLimitError.prototype);
   }
 }
@@ -368,11 +365,8 @@ export async function fetchCurrentUserProfile(
 
   if (!res.ok) {
     if (res.status === 429) {
-      const retryHeader = res.headers.get("Retry-After");
-      const retryAfter = retryHeader ? parseInt(retryHeader, 10) : undefined;
       throw new SpotifyRateLimitError(
-        "Limite di richieste Spotify raggiunto (429 Too Many Requests).",
-        !isNaN(retryAfter as number) ? retryAfter : undefined
+        "Limite di richieste Spotify raggiunto (429 Too Many Requests)."
       );
     }
     if (res.status === 401) {
@@ -501,11 +495,8 @@ export async function searchSpotifyTrack(
       });
 
       if (res.status === 429) {
-        const retryHeader = res.headers.get("Retry-After");
-        const retryAfter = retryHeader ? parseInt(retryHeader, 10) : undefined;
         throw new SpotifyRateLimitError(
-          "Limite di richieste Spotify raggiunto (429 Too Many Requests).",
-          !isNaN(retryAfter as number) ? retryAfter : undefined
+          "Limite di richieste Spotify raggiunto (429 Too Many Requests)."
         );
       }
 

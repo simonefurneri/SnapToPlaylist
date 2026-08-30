@@ -84,7 +84,6 @@ function MainAppContent() {
     () => !!initialPending?.autoCreateAfterAuth
   );
   const [isRateLimitModalOpen, setIsRateLimitModalOpen] = useState(false);
-  const [rateLimitRetryAfter, setRateLimitRetryAfter] = useState<number | null>(null);
   const [createdPlaylistResult, setCreatedPlaylistResult] =
     useState<CreatedPlaylistResult | null>(null);
 
@@ -318,8 +317,6 @@ function MainAppContent() {
             songErr instanceof SpotifyRateLimitError ||
             (songErr as Error)?.name === "SpotifyRateLimitError"
           ) {
-            const retrySec = (songErr as SpotifyRateLimitError).retryAfter || null;
-
             // Reset current track and any other tracks currently in searching state back to pending
             for (let k = 0; k < updatedSongs.length; k++) {
               if (updatedSongs[k].status === "searching") {
@@ -329,13 +326,10 @@ function MainAppContent() {
             setSongs([...updatedSongs]);
 
             // Open Rate Limit modal on first occurrence
-            setRateLimitRetryAfter(retrySec);
             setIsRateLimitModalOpen(true);
 
             setErrorMessage(
-              `Limite di richieste Spotify raggiunto (Rate Limit 429). Ricerca interrotta per i brani successivi.${
-                retrySec ? ` Attendi circa ${retrySec}s prima di riprovare.` : ""
-              }`
+              "Limite di richieste Spotify raggiunto (Rate Limit 429). Ricerca interrotta per i brani successivi."
             );
             setStatusStepText(
               `Verifica interrotta per Rate Limit Spotify al brano ${i + 1}/${updatedSongs.length}.`
@@ -374,8 +368,6 @@ function MainAppContent() {
         error instanceof SpotifyRateLimitError ||
         error?.name === "SpotifyRateLimitError"
       ) {
-        const retrySec = (error as SpotifyRateLimitError).retryAfter || null;
-        setRateLimitRetryAfter(retrySec);
         setIsRateLimitModalOpen(true);
         setErrorMessage("Limite di richieste Spotify raggiunto (Rate Limit 429).");
       } else {
@@ -439,9 +431,7 @@ function MainAppContent() {
         error instanceof SpotifyRateLimitError ||
         error?.name === "SpotifyRateLimitError"
       ) {
-        const retrySec = (error as SpotifyRateLimitError).retryAfter || null;
         setIsConfirmModalOpen(false);
-        setRateLimitRetryAfter(retrySec);
         setIsRateLimitModalOpen(true);
         setErrorMessage("Limite di richieste Spotify raggiunto (Rate Limit 429). Riprova tra poco.");
       } else if (error.message.includes("401") || error.message.includes("scaduta")) {
@@ -473,7 +463,6 @@ function MainAppContent() {
     setStatusStepText("");
     setIsConfirmModalOpen(false);
     setIsRateLimitModalOpen(false);
-    setRateLimitRetryAfter(null);
   };
 
   // Show loading spinner while checking access
@@ -685,7 +674,6 @@ function MainAppContent() {
       {/* Spotify Rate Limit Modal */}
       <SpotifyRateLimitModal
         isOpen={isRateLimitModalOpen}
-        retryAfter={rateLimitRetryAfter}
         onClose={() => setIsRateLimitModalOpen(false)}
         onRetry={() => {
           setIsRateLimitModalOpen(false);
