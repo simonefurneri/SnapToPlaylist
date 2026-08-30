@@ -17,6 +17,16 @@ export class SpotifyRateLimitError extends Error {
   }
 }
 
+export class SpotifyForbiddenError extends Error {
+  constructor(
+    message: string = "Accesso negato da Spotify (403 Forbidden). Il tuo account non è registrato tra gli utenti autorizzati nella Developer Dashboard di Spotify (Modalità Sviluppo) oppure non dispone dei permessi necessari."
+  ) {
+    super(message);
+    this.name = "SpotifyForbiddenError";
+    Object.setPrototypeOf(this, SpotifyForbiddenError.prototype);
+  }
+}
+
 const STORAGE_KEYS = {
   ACCESS_TOKEN: "stp_spotify_access_token",
   REFRESH_TOKEN: "stp_spotify_refresh_token",
@@ -323,17 +333,22 @@ export async function exchangeAuthCodeForToken(
   }
 
   const tokenData = await tokenRes.json();
-  saveSpotifyTokens(
-    tokenData.access_token,
-    tokenData.refresh_token,
-    tokenData.expires_in
-  );
 
-  // Fetch and save user profile
-  const profile = await fetchCurrentUserProfile(tokenData.access_token);
-  localStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
-
-  return { accessToken: tokenData.access_token, profile };
+  // Validate user profile BEFORE storing tokens permanently
+  try {
+    const profile = await fetchCurrentUserProfile(tokenData.access_token);
+    saveSpotifyTokens(
+      tokenData.access_token,
+      tokenData.refresh_token,
+      tokenData.expires_in
+    );
+    localStorage.setItem(STORAGE_KEYS.USER_PROFILE, JSON.stringify(profile));
+    return { accessToken: tokenData.access_token, profile };
+  } catch (err) {
+    // If fetching profile fails (e.g. 403 forbidden / unregistered user), ensure tokens are wiped
+    logoutSpotify();
+    throw err;
+  }
 }
 
 // Get pending action if any after callback
@@ -367,6 +382,14 @@ export async function fetchCurrentUserProfile(
     if (res.status === 429) {
       throw new SpotifyRateLimitError(
         "Limite di richieste Spotify raggiunto (429 Too Many Requests)."
+      );
+    }
+    if (res.status === 403) {
+      logoutSpotify();
+      const errData = await res.json().catch(() => ({}));
+      const detail = errData?.error?.message ? ` (${errData.error.message})` : "";
+      throw new SpotifyForbiddenError(
+        `Accesso negato da Spotify (403 Forbidden)${detail}. Il tuo account Spotify non è registrato tra gli utenti abilitati nella Developer Dashboard di Spotify (Modalità Sviluppo). Contatta l'amministratore per abilitare la tua email.`
       );
     }
     if (res.status === 401) {
@@ -599,8 +622,18 @@ export async function searchSpotifyTrack(
         );
       }
 
+      if (res.status === 403) {
+        logoutSpotify();
+        const errData = await res.json().catch(() => ({}));
+        const detail = errData?.error?.message ? ` (${errData.error.message})` : "";
+        throw new SpotifyForbiddenError(
+          `Accesso negato da Spotify (403 Forbidden)${detail}: account non autorizzato nella Developer Dashboard di Spotify.`
+        );
+      }
+
       if (res.status === 401) {
-        throw new Error("Sessione Spotify scaduta.");
+        logoutSpotify();
+        throw new Error("Sessione Spotify scaduta. Effettua nuovamente l'accesso.");
       }
 
       if (res.ok) {
@@ -637,6 +670,9 @@ export async function searchSpotifyTrack(
       if (
         err instanceof SpotifyRateLimitError ||
         (err as Error)?.name === "SpotifyRateLimitError" ||
+        err instanceof SpotifyForbiddenError ||
+        (err as Error)?.name === "SpotifyForbiddenError" ||
+        (err as Error)?.message?.includes("403") ||
         (err as Error)?.message?.includes("Sessione Spotify scaduta")
       ) {
         throw err;
@@ -693,12 +729,19 @@ export async function createPlaylistAndAddTracks(
         playlistId = playlistData.id;
         break;
       } else {
+        if (createRes.status === 403) {
+          logoutSpotify();
+          throw new SpotifyForbiddenError(
+            "Accesso negato da Spotify (403 Forbidden): il tuo account Spotify non è autorizzato nella Developer Dashboard (Modalità Sviluppo) o non ha i permessi per creare playlist."
+          );
+        }
         const errJson = await createRes.json().catch(() => ({}));
         lastCreateError = new Error(
           errJson.error?.message || `Status ${createRes.status}`
         );
       }
     } catch (err: unknown) {
+      if (err instanceof SpotifyForbiddenError) throw err;
       lastCreateError = err as Error;
     }
   }
@@ -721,6 +764,12 @@ export async function createPlaylistAndAddTracks(
       playlistData = await res.json();
       playlistId = playlistData.id;
     } else {
+      if (res.status === 403) {
+        logoutSpotify();
+        throw new SpotifyForbiddenError(
+          "Accesso negato da Spotify (403 Forbidden): il tuo account Spotify non è autorizzato nella Developer Dashboard (Modalità Sviluppo)."
+        );
+      }
       const err = await res.json().catch(() => ({}));
       throw new Error(
         err.error?.message ||
@@ -799,8 +848,9 @@ export async function createPlaylistAndAddTracks(
         const errorText = await addRes.text();
         console.error("Errore nell'aggiunta tracce:", errorText);
         if (addRes.status === 403) {
-          throw new Error(
-            "Accesso negato (403 Forbidden). Assicurati che il tuo account Spotify sia registrato in 'User Management' nella dashboard sviluppatore di Spotify e di aver concesso i permessi di scrittura."
+          logoutSpotify();
+          throw new SpotifyForbiddenError(
+            "Accesso negato da Spotify (403 Forbidden): account non autorizzato in 'User Management' nella dashboard sviluppatore di Spotify o permessi mancanti."
           );
         }
       } else {

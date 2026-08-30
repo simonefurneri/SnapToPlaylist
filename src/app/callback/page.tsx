@@ -2,7 +2,11 @@
 
 import { Suspense, useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { exchangeAuthCodeForToken, isSpotifyAuthenticated } from "@/lib/spotify";
+import {
+  exchangeAuthCodeForToken,
+  isSpotifyAuthenticated,
+  logoutSpotify,
+} from "@/lib/spotify";
 import { Loader2, Music2, AlertCircle } from "lucide-react";
 
 function CallbackContent() {
@@ -24,9 +28,6 @@ function CallbackContent() {
 
       if (authError) {
         setError(`Accesso Spotify annullato o negato: ${authError}`);
-        setTimeout(() => {
-          router.push("/?error=" + encodeURIComponent("Accesso Spotify annullato."));
-        }, 2000);
         return;
       }
 
@@ -36,9 +37,6 @@ function CallbackContent() {
           return;
         }
         setError("Parametri di autenticazione mancanti.");
-        setTimeout(() => {
-          router.push("/");
-        }, 2000);
         return;
       }
 
@@ -48,11 +46,7 @@ function CallbackContent() {
         setStatusText("Autenticazione completata! Ritorno all'app...");
         router.replace("/?spotify_auth=success");
       } catch (err: unknown) {
-        // If already authenticated in the background, redirect gracefully
-        if (isSpotifyAuthenticated()) {
-          router.replace("/?spotify_auth=success");
-          return;
-        }
+        logoutSpotify();
         const message =
           err instanceof Error
             ? err.message
@@ -86,7 +80,7 @@ function CallbackContent() {
             </p>
             <button
               onClick={() => router.push("/")}
-              className="w-full py-2.5 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 font-medium text-sm transition-all"
+              className="w-full py-2.5 px-4 rounded-xl bg-neutral-800 hover:bg-neutral-700 font-medium text-sm transition-all cursor-pointer"
             >
               Torna alla Home
             </button>

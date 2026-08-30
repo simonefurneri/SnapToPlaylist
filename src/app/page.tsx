@@ -18,6 +18,7 @@ import {
   getAndClearPendingPlaylistAction,
   getSpotifyClientId,
   SpotifyRateLimitError,
+  SpotifyForbiddenError,
 } from "@/lib/spotify";
 import { Navbar } from "@/components/Navbar";
 import { ImageUploader } from "@/components/ImageUploader";
@@ -69,10 +70,7 @@ function MainAppContent() {
     null
   );
   const [statusStepText, setStatusStepText] = useState("");
-  const [errorMessage, setErrorMessage] = useState<string | null>(() => {
-    const err = searchParams.get("error");
-    return err ? decodeURIComponent(err) : null;
-  });
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(() => {
     return searchParams.get("spotify_auth")
       ? "Login Spotify effettuato con successo!"
@@ -113,7 +111,24 @@ function MainAppContent() {
           if (isMounted) setUserProfile(profile);
         } catch (err: unknown) {
           console.warn("Errore sessione Spotify:", err);
-          if (isMounted) setUserProfile(null);
+          logoutSpotify();
+          if (isMounted) {
+            setUserProfile(null);
+            const msg =
+              err instanceof SpotifyForbiddenError ||
+              (err as Error)?.name === "SpotifyForbiddenError" ||
+              (err as Error)?.message?.includes("403")
+                ? (err as Error).message ||
+                  "Accesso negato da Spotify (403 Forbidden): il tuo account Spotify non è autorizzato nella Developer Dashboard."
+                : (err as Error)?.message?.includes("scaduta") ||
+                  (err as Error)?.message?.includes("401")
+                ? "Sessione Spotify scaduta. Effettua nuovamente l'accesso."
+                : null;
+            if (msg) {
+              setErrorMessage(msg);
+              setSuccessMessage(null);
+            }
+          }
         }
       }
     };
@@ -137,6 +152,15 @@ function MainAppContent() {
     }, 4000);
     return () => clearTimeout(timer);
   }, [successMessage]);
+
+  // 3. Auto-dismiss error notification banner after 5 seconds
+  useEffect(() => {
+    if (!errorMessage) return;
+    const timer = setTimeout(() => {
+      setErrorMessage(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [errorMessage]);
 
   // 4. Gemini Vision Extraction
   const handleAnalyzeImage = async (
@@ -253,8 +277,11 @@ function MainAppContent() {
 
     const token = getStoredAccessToken();
 
-    // If not authenticated, trigger login first
-    if (!token) {
+    // If not authenticated or no valid profile, prompt login first and do not call Spotify APIs
+    if (!token || !userProfile) {
+      setErrorMessage(
+        "È necessario effettuare l'accesso con il proprio account Spotify prima di verificare i brani."
+      );
       const clientId = getSpotifyClientId();
       if (!clientId) {
         setErrorMessage(
@@ -319,6 +346,28 @@ function MainAppContent() {
             await new Promise((resolve) => setTimeout(resolve, 180));
           }
         } catch (songErr: unknown) {
+          // 403 Forbidden: unregistered user in developer dashboard or forbidden access
+          if (
+            songErr instanceof SpotifyForbiddenError ||
+            (songErr as Error)?.name === "SpotifyForbiddenError" ||
+            (songErr as Error)?.message?.includes("403")
+          ) {
+            for (let k = 0; k < updatedSongs.length; k++) {
+              if (updatedSongs[k].status === "searching") {
+                updatedSongs[k] = { ...updatedSongs[k], status: "pending" };
+              }
+            }
+            setSongs([...updatedSongs]);
+            logoutSpotify();
+            setUserProfile(null);
+            setErrorMessage(
+              (songErr as Error).message ||
+                "Accesso negato da Spotify (403 Forbidden): il tuo account Spotify non è autorizzato nella Developer Dashboard."
+            );
+            setStatusStepText("Verifica interrotta: accesso Spotify non autorizzato (403).");
+            break;
+          }
+
           // Rate limit error: immediately halt searching subsequent songs
           if (
             songErr instanceof SpotifyRateLimitError ||
@@ -346,7 +395,16 @@ function MainAppContent() {
             break;
           }
 
-          if ((songErr as Error)?.message?.includes("Sessione Spotify scaduta")) {
+          if (
+            (songErr as Error)?.message?.includes("Sessione Spotify scaduta") ||
+            (songErr as Error)?.message?.includes("401")
+          ) {
+            for (let k = 0; k < updatedSongs.length; k++) {
+              if (updatedSongs[k].status === "searching") {
+                updatedSongs[k] = { ...updatedSongs[k], status: "pending" };
+              }
+            }
+            setSongs([...updatedSongs]);
             logoutSpotify();
             setUserProfile(null);
             setErrorMessage("Sessione Spotify scaduta. Effettua nuovamente il login.");
@@ -372,6 +430,17 @@ function MainAppContent() {
     } catch (err: unknown) {
       const error = err as Error;
       if (
+        error instanceof SpotifyForbiddenError ||
+        error?.name === "SpotifyForbiddenError" ||
+        error?.message?.includes("403")
+      ) {
+        logoutSpotify();
+        setUserProfile(null);
+        setErrorMessage(
+          error.message ||
+            "Accesso negato da Spotify (403): account non autorizzato nella Developer Dashboard."
+        );
+      } else if (
         error instanceof SpotifyRateLimitError ||
         error?.name === "SpotifyRateLimitError"
       ) {
@@ -388,6 +457,11 @@ function MainAppContent() {
 
   // 7. Step 2: Open Confirmation Modal
   const handleRequestCreatePlaylist = () => {
+    if (!userProfile) {
+      setErrorMessage("Devi accedere a Spotify prima di poter creare la playlist.");
+      return;
+    }
+
     const hasUnchecked = songs.some((s) => s.status === "pending" || !s.status);
     if (hasUnchecked) {
       setErrorMessage(
@@ -409,7 +483,7 @@ function MainAppContent() {
   const handleExecuteCreateSpotifyPlaylist = async () => {
     const token = getStoredAccessToken();
 
-    if (!token) {
+    if (!token || !userProfile) {
       await initiateSpotifyAuth({
         playlistName,
         songs,
@@ -435,6 +509,18 @@ function MainAppContent() {
     } catch (err: unknown) {
       const error = err as Error;
       if (
+        error instanceof SpotifyForbiddenError ||
+        error?.name === "SpotifyForbiddenError" ||
+        error?.message?.includes("403")
+      ) {
+        setIsConfirmModalOpen(false);
+        logoutSpotify();
+        setUserProfile(null);
+        setErrorMessage(
+          error.message ||
+            "Accesso negato da Spotify (403 Forbidden): il tuo account Spotify non è autorizzato."
+        );
+      } else if (
         error instanceof SpotifyRateLimitError ||
         error?.name === "SpotifyRateLimitError"
       ) {
@@ -442,6 +528,7 @@ function MainAppContent() {
         setIsRateLimitModalOpen(true);
         setErrorMessage("Limite di richieste Spotify raggiunto (Rate Limit 429). Riprova tra poco.");
       } else if (error.message.includes("401") || error.message.includes("scaduta")) {
+        setIsConfirmModalOpen(false);
         logoutSpotify();
         setUserProfile(null);
         setErrorMessage("Sessione Spotify scaduta. Effettua nuovamente il login.");
@@ -637,6 +724,7 @@ function MainAppContent() {
               key="songlist-view"
               songs={songs}
               playlistName={playlistName}
+              userProfile={userProfile}
               onPlaylistNameChange={setPlaylistName}
               onUpdateSong={handleUpdateSong}
               onDeleteSong={handleDeleteSong}

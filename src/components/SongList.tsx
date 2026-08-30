@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { ExtractedSong } from "@/types";
+import { ExtractedSong, SpotifyUserProfile } from "@/types";
 import {
   CheckCircle2,
   XCircle,
@@ -23,6 +23,7 @@ import { motion, AnimatePresence } from "framer-motion";
 interface SongListProps {
   songs: ExtractedSong[];
   playlistName: string;
+  userProfile?: SpotifyUserProfile | null;
   onPlaylistNameChange: (newName: string) => void;
   onUpdateSong: (id: string, updated: Partial<ExtractedSong>) => void;
   onDeleteSong: (id: string) => void;
@@ -39,6 +40,7 @@ interface SongListProps {
 export function SongList({
   songs,
   playlistName,
+  userProfile,
   onPlaylistNameChange,
   onUpdateSong,
   onDeleteSong,
@@ -249,7 +251,20 @@ export function SongList({
 
         {/* Status Summary Banner */}
         <AnimatePresence>
-          {isFullyChecked && (
+          {!userProfile ? (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.25 }}
+              className="mt-4 pt-4 border-t border-neutral-800/80 flex items-center gap-2 text-xs text-amber-300 bg-amber-950/20 p-3 rounded-2xl border border-amber-900/40"
+            >
+              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <span>
+                Accesso Spotify richiesto: per verificare i brani ed esportare la playlist è necessario autenticarsi con un account Spotify autorizzato.
+              </span>
+            </motion.div>
+          ) : isFullyChecked ? (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -274,9 +289,7 @@ export function SongList({
                 Puoi modificare i titoli e cliccare nuovamente su &quot;Verifica su Spotify&quot;.
               </span>
             </motion.div>
-          )}
-
-          {hasUncheckedChanges && songs.length > 0 && (
+          ) : hasUncheckedChanges && songs.length > 0 ? (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -291,7 +304,7 @@ export function SongList({
                   : "Hai modifiche non ancora verificate. Rifai la verifica per abilitare la creazione della playlist."}
               </span>
             </motion.div>
-          )}
+          ) : null}
         </AnimatePresence>
       </motion.div>
 
@@ -544,13 +557,17 @@ export function SongList({
         <div className="p-4 sm:p-6 bg-neutral-950/90 border-t border-neutral-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4">
           <div className="text-xs text-neutral-400 text-center sm:text-left space-y-0.5">
             <p className="font-semibold text-neutral-200">
-              {hasUncheckedChanges
+              {!userProfile
+                ? "Passo 1: Accedi a Spotify per verificare i brani"
+                : hasUncheckedChanges
                 ? "Passo 1: Verifica i brani su Spotify"
                 : `Passo 2: Pronto per creare la playlist (${foundSongs.length} brani trovati)`}
             </p>
             <p className="text-[11px] text-neutral-500">
               {statusStepText ||
-                (hasUncheckedChanges
+                (!userProfile
+                  ? "È necessario connettere un account Spotify autorizzato prima di verificare."
+                  : hasUncheckedChanges
                   ? "Verifica i brani per sbloccare la creazione della playlist."
                   : "Clicca su Crea Playlist per visualizzare il riepilogo e confermare.")}
             </p>
@@ -566,7 +583,9 @@ export function SongList({
               disabled={isVerifying || isCreating || songs.length === 0}
               onClick={onVerifyTracks}
               className={`py-3 px-5 rounded-2xl font-bold text-xs sm:text-sm transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                !hasUncheckedChanges
+                !userProfile
+                  ? "bg-[#1DB954] hover:bg-[#1ed760] text-neutral-950 shadow-lg shadow-[#1DB954]/20"
+                  : !hasUncheckedChanges
                   ? "bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700"
                   : "bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20"
               }`}
@@ -576,33 +595,44 @@ export function SongList({
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Verifica in corso...</span>
                 </>
+              ) : !userProfile ? (
+                <>
+                  <Music className="w-4 h-4" />
+                  <span>Accedi a Spotify e Verifica</span>
+                </>
+              ) : !hasUncheckedChanges ? (
+                <>
+                  <Search className="w-4 h-4" />
+                  <span>Rifai Verifica</span>
+                </>
               ) : (
                 <>
                   <Search className="w-4 h-4" />
-                  <span>
-                    {!hasUncheckedChanges ? "Rifai Verifica" : "Verifica su Spotify"}
-                  </span>
+                  <span>Verifica su Spotify</span>
                 </>
               )}
             </motion.button>
 
-            {/* Button 2: Create Playlist on Spotify (Disabled until verified) */}
+            {/* Button 2: Create Playlist on Spotify (Disabled until verified and logged in) */}
             <motion.button
-              whileHover={!hasUncheckedChanges && foundSongs.length > 0 ? { scale: 1.03 } : {}}
-              whileTap={!hasUncheckedChanges && foundSongs.length > 0 ? { scale: 0.97 } : {}}
+              whileHover={!hasUncheckedChanges && foundSongs.length > 0 && !!userProfile ? { scale: 1.03 } : {}}
+              whileTap={!hasUncheckedChanges && foundSongs.length > 0 && !!userProfile ? { scale: 0.97 } : {}}
               transition={{ type: "spring", stiffness: 400, damping: 20 }}
               type="button"
               disabled={
                 isVerifying ||
                 isCreating ||
                 songs.length === 0 ||
+                !userProfile ||
                 hasUncheckedChanges ||
                 foundSongs.length === 0
               }
               onClick={onRequestCreatePlaylist}
               className="py-3 px-6 rounded-2xl bg-gradient-to-r from-[#1DB954] via-emerald-500 to-teal-500 hover:from-[#1ed760] hover:to-teal-400 text-neutral-950 font-extrabold text-xs sm:text-sm shadow-xl shadow-[#1DB954]/25 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed"
               title={
-                hasUncheckedChanges
+                !userProfile
+                  ? "Accedi prima a Spotify"
+                  : hasUncheckedChanges
                   ? "Esegui prima la verifica dei brani"
                   : "Crea la playlist su Spotify"
               }
