@@ -77,11 +77,12 @@ function MainAppContent() {
       : null;
   });
 
-  // Modals
+  // Modals & Settings
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(
     () => !!initialPending?.autoCreateAfterAuth
   );
   const [isRateLimitModalOpen, setIsRateLimitModalOpen] = useState(false);
+  const [useCache, setUseCache] = useState(true);
   const [createdPlaylistResult, setCreatedPlaylistResult] =
     useState<CreatedPlaylistResult | null>(null);
 
@@ -318,7 +319,9 @@ function MainAppContent() {
         setSongs([...updatedSongs]);
 
         try {
-          const match = await searchSpotifyTrack(token, song.title, song.artist);
+          const match = await searchSpotifyTrack(token, song.title, song.artist, {
+            useCache,
+          });
 
           if (match.found && match.spotifyUri) {
             updatedSongs[i] = {
@@ -330,6 +333,7 @@ function MainAppContent() {
               spotifyAlbumCover: match.spotifyAlbumCover,
               spotifyTrackUrl: match.spotifyTrackUrl,
               spotifyPreviewUrl: match.spotifyPreviewUrl,
+              fromCache: match.fromCache ?? false,
             };
           } else {
             updatedSongs[i] = {
@@ -337,6 +341,7 @@ function MainAppContent() {
               status: "not_found",
               spotifyUri: undefined,
               spotifyAlbumCover: undefined,
+              fromCache: match.fromCache ?? false,
             };
           }
 
@@ -735,6 +740,8 @@ function MainAppContent() {
               isCreating={isCreating}
               activeCheckingSongId={activeCheckingSongId}
               statusStepText={statusStepText}
+              useCache={useCache}
+              onToggleCache={setUseCache}
               onReset={handleResetToHome}
             />
           )}

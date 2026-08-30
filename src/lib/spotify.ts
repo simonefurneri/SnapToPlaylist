@@ -541,7 +541,10 @@ export function setCachedTrack(
 export async function searchSpotifyTrack(
   accessToken: string,
   title: string,
-  artist: string
+  artist: string,
+  options?: {
+    useCache?: boolean;
+  }
 ): Promise<{
   found: boolean;
   spotifyUri?: string;
@@ -552,19 +555,23 @@ export async function searchSpotifyTrack(
   spotifyPreviewUrl?: string | null;
   fromCache?: boolean;
 }> {
-  // 1. Check local & memory cache first to save API quota
-  const cached = getCachedTrack(title, artist);
-  if (cached) {
-    return {
-      found: cached.found,
-      spotifyUri: cached.spotifyUri,
-      spotifyTrackName: cached.spotifyTrackName,
-      spotifyArtistName: cached.spotifyArtistName,
-      spotifyAlbumCover: cached.spotifyAlbumCover,
-      spotifyTrackUrl: cached.spotifyTrackUrl,
-      spotifyPreviewUrl: cached.spotifyPreviewUrl,
-      fromCache: true,
-    };
+  const allowCacheRead = options?.useCache !== false;
+
+  // 1. Check local & memory cache first to save API quota (if enabled)
+  if (allowCacheRead) {
+    const cached = getCachedTrack(title, artist);
+    if (cached) {
+      return {
+        found: cached.found,
+        spotifyUri: cached.spotifyUri,
+        spotifyTrackName: cached.spotifyTrackName,
+        spotifyArtistName: cached.spotifyArtistName,
+        spotifyAlbumCover: cached.spotifyAlbumCover,
+        spotifyTrackUrl: cached.spotifyTrackUrl,
+        spotifyPreviewUrl: cached.spotifyPreviewUrl,
+        fromCache: true,
+      };
+    }
   }
 
   const cleanTitle = title

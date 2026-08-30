@@ -10,6 +10,7 @@ export interface ExtractedSong {
   spotifyAlbumCover?: string;
   spotifyTrackUrl?: string;
   spotifyPreviewUrl?: string | null;
+  fromCache?: boolean;
 }
 
 export interface GeminiExtractionResponse {

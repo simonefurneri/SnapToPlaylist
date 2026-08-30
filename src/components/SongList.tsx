@@ -17,6 +17,8 @@ import {
   Check,
   RotateCcw,
   AlertTriangle,
+  Zap,
+  Globe,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -34,6 +36,8 @@ interface SongListProps {
   isCreating: boolean;
   activeCheckingSongId?: string | null;
   statusStepText?: string;
+  useCache?: boolean;
+  onToggleCache?: (enabled: boolean) => void;
   onReset: () => void;
 }
 
@@ -51,6 +55,8 @@ export function SongList({
   isCreating,
   activeCheckingSongId,
   statusStepText,
+  useCache = true,
+  onToggleCache,
   onReset,
 }: SongListProps) {
   // Title editing state
@@ -78,6 +84,10 @@ export function SongList({
 
   const hasUncheckedChanges = pendingSongs.length > 0;
   const isFullyChecked = songs.length > 0 && !hasUncheckedChanges;
+
+  const verifiedSongs = songs.filter((s) => s.status === "found" || s.status === "not_found");
+  const cachedCount = verifiedSongs.filter((s) => s.fromCache === true).length;
+  const liveCount = verifiedSongs.filter((s) => s.fromCache === false).length;
 
   // Auto-focus title input when edit mode is toggled
   useEffect(() => {
@@ -313,23 +323,122 @@ export function SongList({
         layout
         className="bg-neutral-900/70 border border-neutral-800 rounded-3xl overflow-hidden shadow-xl backdrop-blur"
       >
-        {/* Table Header */}
-        <div className="px-4 sm:px-6 py-3.5 border-b border-neutral-800 flex items-center justify-between bg-neutral-950/50">
-          <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-            <span>Elenco Brani ({songs.length})</span>
-          </h3>
+        {/* Table Header with Cache Toggle & Status Badge */}
+        <div className="px-4 sm:px-6 py-3.5 border-b border-neutral-800 flex flex-wrap items-center justify-between gap-3 bg-neutral-950/50">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <h3 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 flex-shrink-0">
+              <span>Elenco Brani ({songs.length})</span>
+            </h3>
 
-          <motion.button
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.95 }}
-            type="button"
-            onClick={onAddSong}
-            disabled={isVerifying || isCreating}
-            className="text-xs font-semibold text-neutral-300 hover:text-[#1DB954] flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Aggiungi brano</span>
-          </motion.button>
+            {/* Cache Status Badge */}
+            {verifiedSongs.length > 0 ? (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {cachedCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                    title={`${cachedCount} brani verificati tramite Cache locale (0 chiamate API)`}
+                  >
+                    <Zap className="w-3 h-3 text-amber-400 fill-amber-400/20" />
+                    <span>{cachedCount} Cache</span>
+                  </span>
+                )}
+                {liveCount > 0 && (
+                  <span
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30"
+                    title={`${liveCount} brani verificati in tempo reale tramite API Spotify`}
+                  >
+                    <Globe className="w-3 h-3 text-cyan-400" />
+                    <span>{liveCount} Live API</span>
+                  </span>
+                )}
+              </div>
+            ) : (
+              <span
+                className={`hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold transition-colors ${
+                  useCache
+                    ? "bg-emerald-950/60 text-emerald-300 border border-emerald-800/60"
+                    : "bg-neutral-800 text-neutral-400 border border-neutral-700"
+                }`}
+                title={
+                  useCache
+                    ? "Cache attiva: riutilizza i brani già verificati per risparmiare chiamate API"
+                    : "Cache disabilitata: eseguirà chiamate live aggiornando la cache"
+                }
+              >
+                {useCache ? (
+                  <>
+                    <Zap className="w-3 h-3 text-emerald-400" />
+                    <span>Cache Attiva</span>
+                  </>
+                ) : (
+                  <>
+                    <Globe className="w-3 h-3 text-neutral-400" />
+                    <span>Solo Live API</span>
+                  </>
+                )}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+            {/* Cache Toggle Switch */}
+            {onToggleCache && (
+              <div
+                className={`flex items-center gap-2 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border transition-all ${
+                  useCache
+                    ? "bg-neutral-900 border-neutral-700 text-neutral-200"
+                    : "bg-neutral-900/60 border-neutral-800 text-neutral-400"
+                }`}
+                title={
+                  useCache
+                    ? "Cache attiva (clicca per disabilitare e forzare chiamate live API)"
+                    : "Cache disabilitata (clicca per abilitare il riutilizzo dei dati in cache)"
+                }
+              >
+                <div
+                  className="flex items-center gap-1 text-[11px] font-semibold select-none cursor-pointer"
+                  onClick={() => onToggleCache(!useCache)}
+                >
+                  <Zap
+                    className={`w-3 h-3 transition-colors ${
+                      useCache ? "text-amber-400 fill-amber-400/20" : "text-neutral-500"
+                    }`}
+                  />
+                  <span>Cache</span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={useCache}
+                  disabled={isVerifying || isCreating}
+                  onClick={() => onToggleCache(!useCache)}
+                  className={`relative inline-flex h-4 w-7 sm:h-5 sm:w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                    useCache ? "bg-[#1DB954]" : "bg-neutral-700"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-3 w-3 sm:h-4 sm:w-4 transform rounded-full bg-neutral-950 shadow-md ring-0 transition duration-200 ease-in-out ${
+                      useCache ? "translate-x-3 sm:translate-x-4" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
+
+            <motion.button
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.95 }}
+              type="button"
+              onClick={onAddSong}
+              disabled={isVerifying || isCreating}
+              className="text-xs font-semibold text-neutral-300 hover:text-[#1DB954] flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Aggiungi brano</span>
+              <span className="sm:hidden">Aggiungi</span>
+            </motion.button>
+          </div>
         </div>
 
         {/* Songs List Items */}
@@ -482,6 +591,26 @@ export function SongList({
                             >
                               <ExternalLink className="w-3.5 h-3.5" />
                             </a>
+                          )}
+
+                          {/* Cache or Live API badge */}
+                          {song.fromCache === true && song.status === "found" && (
+                            <span
+                              className="inline-flex items-center gap-0.5 text-[9px] font-bold text-amber-300 bg-amber-950/50 border border-amber-800/50 px-1.5 py-0.5 rounded-md flex-shrink-0 shadow-sm"
+                              title="Recuperato dalla cache locale (0 chiamate API)"
+                            >
+                              <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400/20" />
+                              <span>Cache</span>
+                            </span>
+                          )}
+                          {song.fromCache === false && song.status === "found" && (
+                            <span
+                              className="inline-flex items-center gap-0.5 text-[9px] font-bold text-cyan-300 bg-cyan-950/50 border border-cyan-800/50 px-1.5 py-0.5 rounded-md flex-shrink-0 shadow-sm"
+                              title="Verificato tramite chiamata live API Spotify"
+                            >
+                              <Globe className="w-2.5 h-2.5 text-cyan-400" />
+                              <span>Live</span>
+                            </span>
                           )}
                         </div>
 
